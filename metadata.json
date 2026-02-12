@@ -1,0 +1,7 @@
+{
+  "name": "SwiftPolicy Insurance",
+  "description": "A modern, high-performance insurance platform providing instant quotes and comprehensive coverage for the digital age.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
