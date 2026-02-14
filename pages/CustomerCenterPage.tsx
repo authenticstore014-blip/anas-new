@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -14,9 +13,9 @@ import {
   CalendarDays, Settings2, ShieldQuestion, UserCog, ChevronDown, ChevronLeft, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { Navigate, Link } from 'react-router-dom';
-import { User, Policy, MIDSubmission, PolicyStatus } from '../types';
+import { User, Policy, MIDSubmission, PolicyStatus, VehicleLookupLog } from '../types';
 
-// TOOLTIP COMPONENT (Lightweight Wrapper)
+// TOOLTIP COMPONENT
 const ActionButton = ({ onClick, icon, tooltip, colorClass, disabled }: any) => (
   <div className="relative group">
     <button 
@@ -33,7 +32,7 @@ const ActionButton = ({ onClick, icon, tooltip, colorClass, disabled }: any) => 
   </div>
 );
 
-// POLICY INTELLIGENCE PANEL (Slide-over Detail View)
+// POLICY INTELLIGENCE PANEL
 const PolicyIntelligencePanel = ({ policy, onClose, getCustomerName, onStatusUpdate }: { 
   policy: Policy; 
   onClose: () => void; 
@@ -87,8 +86,6 @@ const PolicyIntelligencePanel = ({ policy, onClose, getCustomerName, onStatusUpd
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Specification</p>
                   <p className="text-lg font-bold text-[#2d1f2d]">{policy.details?.make} {policy.details?.model}</p>
                </div>
-               
-               {/* Technical Specs Layer */}
                <div className="col-span-2 grid grid-cols-2 gap-6 pt-6 border-t border-gray-50">
                   <div>
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">VIN / Chassis</p>
@@ -98,34 +95,6 @@ const PolicyIntelligencePanel = ({ policy, onClose, getCustomerName, onStatusUpd
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Technical Spec</p>
                     <p className="text-xs font-bold">{policy.details?.engineSize} {policy.details?.fuelType}</p>
                   </div>
-                  <div>
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Paintwork</p>
-                    <p className="text-xs font-bold">{policy.details?.color || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Excess</p>
-                    <p className="text-xs font-bold">{policy.details?.excess || '£250'}</p>
-                  </div>
-               </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-               <Fingerprint size={14} /> Underwriting Metadata
-            </h3>
-            <div className="p-8 bg-[#2d1f2d] rounded-[32px] text-white/80 space-y-6">
-               <div className="flex justify-between items-center pb-4 border-b border-white/5">
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Licence Number</span>
-                  <span className="text-sm font-mono font-bold text-[#e91e8c]">{policy.details?.licenceNumber || 'NOT_FOUND'}</span>
-               </div>
-               <div className="flex justify-between items-center pb-4 border-b border-white/5">
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Cover Level</span>
-                  <span className="text-sm font-bold">{policy.details?.coverLevel || 'Comprehensive'}</span>
-               </div>
-               <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Binding Date</span>
-                  <span className="text-sm font-bold">{policy.validatedAt ? new Date(policy.validatedAt).toLocaleString() : 'N/A'}</span>
                </div>
             </div>
           </div>
@@ -142,18 +111,8 @@ const PolicyIntelligencePanel = ({ policy, onClose, getCustomerName, onStatusUpd
           </div>
 
           <div className="pt-10 border-t border-gray-100 flex flex-wrap gap-4">
-            <button 
-              onClick={() => onStatusUpdate(policy.id, 'Active', 'Admin Deep Audit Resume')}
-              className="flex-1 py-4 bg-[#e91e8c] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-[#c4167a] transition-all"
-            >
-              <Play size={14} /> Resume Coverage
-            </button>
-            <button 
-              onClick={() => onStatusUpdate(policy.id, 'Blocked', 'Admin Deep Audit Hold')}
-              className="flex-1 py-4 border-2 border-red-50 text-red-600 rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-red-50 transition-all"
-            >
-              <ShieldAlert size={14} /> Flag Risk
-            </button>
+            <button onClick={() => onStatusUpdate(policy.id, 'Active', 'Admin Audit Resume')} className="flex-1 py-4 bg-[#e91e8c] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-[#c4167a] transition-all"><Play size={14} /> Resume Coverage</button>
+            <button onClick={() => onStatusUpdate(policy.id, 'Blocked', 'Admin Audit Hold')} className="flex-1 py-4 border-2 border-red-50 text-red-600 rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-red-50 transition-all"><ShieldAlert size={14} /> Flag Risk</button>
           </div>
         </div>
       </div>
@@ -163,16 +122,14 @@ const PolicyIntelligencePanel = ({ policy, onClose, getCustomerName, onStatusUpd
 
 const CustomerCenterPage: React.FC = () => {
   const { 
-    user, isLoading, logout, users, policies,
+    user, isLoading, logout, users, policies, vehicleLogs,
     runDiagnostics, testRegistrationFlow, updatePolicyStatus, deletePolicy, refreshData
   } = useAuth();
   
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [dashboardView, setDashboardView] = useState<'summary' | 'active-feed'>('summary');
   const [isScanning, setIsScanning] = useState(false);
-  const [isTestingReg, setIsTestingReg] = useState(false);
   const [diagReport, setDiagReport] = useState<any>(null);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [policySearch, setPolicySearch] = useState('');
   const [viewingPolicy, setViewingPolicy] = useState<Policy | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -187,81 +144,21 @@ const CustomerCenterPage: React.FC = () => {
     return u ? u.name : 'Unknown Account';
   }, [users]);
 
-  const activePolicies = useMemo(() => {
-    return policies.filter(p => p.status === 'Active');
-  }, [policies]);
-
   const filteredPolicies = useMemo(() => {
     let list = [...policies];
-    if (!isAdmin && user) {
-      list = list.filter(p => p.userId === user.id && p.status !== 'Removed');
-    }
+    if (!isAdmin && user) list = list.filter(p => p.userId === user.id && p.status !== 'Removed');
     if (policySearch) {
       const s = policySearch.toLowerCase();
-      list = list.filter(p => {
-        const userName = getCustomerName(p.userId).toLowerCase();
-        return p.id.toLowerCase().includes(s) || 
-               p.details?.vrm?.toLowerCase().includes(s) ||
-               userName.includes(s);
-      });
+      list = list.filter(p => getCustomerName(p.userId).toLowerCase().includes(s) || p.details?.vrm?.toLowerCase().includes(s));
     }
-    if (statusFilter !== 'All') {
-      const mapped = statusFilter === 'Pending' ? 'Pending Validation' : statusFilter;
-      list = list.filter(p => p.status === mapped);
-    }
-    if (typeFilter !== 'All') {
-      list = list.filter(p => p.type.toLowerCase().includes(typeFilter.toLowerCase()));
-    }
+    if (statusFilter !== 'All') list = list.filter(p => p.status === (statusFilter === 'Pending' ? 'Pending Validation' : statusFilter));
     return list;
-  }, [policies, policySearch, statusFilter, typeFilter, isAdmin, user, getCustomerName]);
+  }, [policies, policySearch, statusFilter, isAdmin, user, getCustomerName]);
 
-  const totalPages = Math.ceil(filteredPolicies.length / pageSize);
   const paginatedPolicies = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredPolicies.slice(start, start + pageSize);
   }, [filteredPolicies, currentPage]);
-
-  const handleDownloadPDF = useCallback((policy: Policy) => {
-    if (policy.status === 'Removed') return;
-    if (!policy.pdfUrl) return;
-    try {
-      const link = document.createElement('a');
-      link.href = policy.pdfUrl;
-      link.setAttribute('download', `SwiftPolicy_${policy.id}_${policy.details?.vrm || 'Document'}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error("PDF RECOVERY ERROR:", err);
-    }
-  }, []);
-
-  const handleRunScan = async () => {
-    setIsScanning(true);
-    const report = await runDiagnostics();
-    setDiagReport(report);
-    setIsScanning(false);
-  };
-
-  const handleTestRegistration = async () => {
-    setIsTestingReg(true);
-    setTestResult(null);
-    const result = await testRegistrationFlow();
-    setTestResult(result);
-    setIsTestingReg(false);
-  };
-
-  const getStatusBadge = (status: PolicyStatus) => {
-    switch (status) {
-      case 'Active': return <span className="px-3 py-1 bg-green-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Active</span>;
-      case 'Frozen': return <span className="px-3 py-1 bg-blue-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Frozen</span>;
-      case 'Blocked': return <span className="px-3 py-1 bg-red-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Blocked</span>;
-      case 'Validated': return <span className="px-3 py-1 bg-indigo-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Validated</span>;
-      case 'Removed': return <span className="px-3 py-1 bg-gray-400 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Removed</span>;
-      case 'Pending Validation': return <span className="px-3 py-1 bg-yellow-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Pending</span>;
-      default: return <span className="px-3 py-1 bg-gray-200 text-gray-500 rounded-full text-[10px] font-black uppercase tracking-widest">{status}</span>;
-    }
-  };
 
   if (isLoading) return null;
   if (!user) return <Navigate to="/auth" />;
@@ -290,8 +187,8 @@ const CustomerCenterPage: React.FC = () => {
               { id: 'dashboard', label: 'Overview', icon: <TrendingUp size={18} /> },
               ...(isAdmin ? [
                 { id: 'policies', label: 'Admin Policies', icon: <ShieldCheck size={18} /> },
-                { id: 'identities', label: 'Identity Vault', icon: <UserCog size={18} /> },
-                { id: 'diagnostics', label: 'System Integrity', icon: <HeartPulse size={18} /> }
+                { id: 'vehicle-registry', label: 'Vehicle Intel', icon: <Database size={18} /> },
+                { id: 'diagnostics', label: 'Integrity', icon: <HeartPulse size={18} /> }
               ] : [
                 { id: 'my-policies', label: 'My Policies', icon: <ShieldCheck size={18} /> }
               ])
@@ -313,86 +210,29 @@ const CustomerCenterPage: React.FC = () => {
               
               {activeTab === 'dashboard' && (
                 <div className="animate-in fade-in duration-300">
-                  <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-3xl font-bold font-outfit">{isAdmin ? 'Live Operations Feed' : 'Policy Register'}</h2>
-                  </div>
-
+                  <h2 className="text-3xl font-bold font-outfit mb-8">{isAdmin ? 'Operations Monitor' : 'Policy Register'}</h2>
                   {isAdmin ? (
-                    dashboardView === 'summary' ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in zoom-in-95 duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <button onClick={() => setDashboardView('active-feed')} className="p-10 bg-[#2d1f2d] rounded-[40px] text-white text-left hover:scale-[1.02] transition-transform shadow-xl">
                           <ShieldCheck className="text-[#e91e8c] mb-6" size={32} />
-                          <p className="text-6xl font-black font-outfit">{activePolicies.length}</p>
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mt-2">Active Registrations</p>
+                          <p className="text-6xl font-black font-outfit">{policies.filter(p => p.status === 'Active').length}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mt-2">Active Registrations</p>
                         </button>
-                        <button onClick={() => setActiveTab('policies')} className="p-10 bg-gray-50 border border-gray-100 rounded-[40px] text-left hover:scale-[1.02] transition-transform shadow-sm">
-                          <Users className="text-green-500 mb-6" size={32} />
-                          <p className="text-6xl font-black font-outfit">{policies.filter(p => p.status !== 'Removed').length}</p>
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mt-2">Total Underwritten</p>
+                        <button onClick={() => setActiveTab('vehicle-registry')} className="p-10 bg-gray-50 border border-gray-100 rounded-[40px] text-left hover:scale-[1.02] transition-transform shadow-sm">
+                          <Database className="text-[#e91e8c] mb-6" size={32} />
+                          <p className="text-6xl font-black font-outfit">{vehicleLogs.length}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-2">Vehicle Lookups</p>
                         </button>
-                      </div>
-                    ) : (
-                      <div className="animate-in slide-in-from-right-8 duration-500">
-                         <div className="overflow-x-auto rounded-3xl border border-gray-100 shadow-sm">
-                          <table className="w-full text-left border-collapse">
-                            <thead className="bg-gray-50 border-b border-gray-100">
-                              <tr>
-                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Ref</th>
-                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Policyholder</th>
-                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Asset</th>
-                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
-                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {activePolicies.map(p => (
-                                <tr key={p.id} onClick={() => setViewingPolicy(p)} className="hover:bg-gray-50/50 cursor-pointer">
-                                  <td className="px-6 py-5"><span className="text-xs font-black font-mono">{p.id}</span></td>
-                                  <td className="px-6 py-5"><span className="text-sm font-bold">{getCustomerName(p.userId)}</span></td>
-                                  <td className="px-6 py-5">
-                                     <div className="flex flex-col">
-                                       <span className="text-xs font-black uppercase">{p.details?.vrm}</span>
-                                       <span className="text-[10px] text-gray-400">{p.details?.make} {p.details?.model}</span>
-                                     </div>
-                                  </td>
-                                  <td className="px-6 py-5">{getStatusBadge(p.status)}</td>
-                                  <td className="px-6 py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                    <ActionButton onClick={() => setViewingPolicy(p)} icon={<Eye size={16} />} tooltip="View Intelligence" colorClass="bg-white border border-gray-100" />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                         </div>
-                      </div>
-                    )
+                    </div>
                   ) : (
-                    <div className="space-y-8">
+                    <div className="space-y-6">
                        {filteredPolicies.map(p => (
                           <div key={p.id} className="p-8 bg-gray-50 border border-gray-100 rounded-[40px] shadow-sm">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                              <div>
-                                <h3 className="text-3xl font-bold font-outfit uppercase tracking-tighter mb-2">{p.details?.vrm}</h3>
-                                {getStatusBadge(p.status)}
-                              </div>
-                              <div className="md:text-right">
-                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Premium</p>
-                                <p className="text-3xl font-black text-[#2d1f2d]">£{p.premium}</p>
-                              </div>
+                            <div className="flex justify-between items-center mb-6">
+                               <h3 className="text-3xl font-black font-outfit uppercase tracking-tighter">{p.details?.vrm}</h3>
+                               <span className="px-3 py-1 bg-[#e91e8c] text-white rounded-full text-[10px] font-black uppercase">{p.status}</span>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-8 border-t border-gray-200">
-                               <div className="space-y-1">
-                                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Technical Spec</p>
-                                  <p className="text-xs font-bold uppercase">{p.details?.engineSize} {p.details?.fuelType}</p>
-                               </div>
-                               <div className="space-y-1">
-                                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Color</p>
-                                  <p className="text-xs font-bold uppercase">{p.details?.color || 'N/A'}</p>
-                               </div>
-                               <div className="flex justify-end items-center gap-3 col-span-2">
-                                  <button onClick={() => handleDownloadPDF(p)} className="p-3 bg-white border border-gray-100 text-gray-400 hover:text-[#e91e8c] rounded-xl"><Download size={18}/></button>
-                               </div>
-                            </div>
+                            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">{p.details?.make} {p.details?.model} • £{p.premium}</p>
                           </div>
                        ))}
                     </div>
@@ -400,40 +240,85 @@ const CustomerCenterPage: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === 'vehicle-registry' && isAdmin && (
+                <div className="animate-in fade-in duration-300">
+                   <div className="flex justify-between items-center mb-10">
+                      <div>
+                        <h2 className="text-3xl font-bold font-outfit">Vehicle Intel Registry</h2>
+                        <p className="text-gray-400 text-sm mt-1">Audit trail of all DVLA/MIB lookups and cached spec data.</p>
+                      </div>
+                      <button onClick={refreshData} className="p-3 bg-gray-50 rounded-xl hover:bg-[#e91e8c]/10 text-gray-400 hover:text-[#e91e8c] transition-all"><RefreshCw size={20}/></button>
+                   </div>
+                   
+                   <div className="overflow-x-auto rounded-3xl border border-gray-100 shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b border-gray-100">
+                          <tr>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Reg</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Vehicle</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Source</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Timestamp</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                           {vehicleLogs.map(log => (
+                             <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                               <td className="px-6 py-5 font-black text-[#2d1f2d] uppercase tracking-widest text-sm">{log.registration}</td>
+                               <td className="px-6 py-5 text-sm font-bold text-gray-600">{log.make} {log.model}</td>
+                               <td className="px-6 py-5">
+                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                   log.source === 'API' ? 'bg-blue-50 text-blue-600' : 
+                                   log.source === 'Intelligence' ? 'bg-purple-50 text-purple-600' : 
+                                   'bg-gray-50 text-gray-400'
+                                 }`}>
+                                   {log.source}
+                                 </span>
+                               </td>
+                               <td className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">
+                                 {log.success ? <span className="text-green-500 flex items-center gap-1"><CheckCircle size={12}/> PASS</span> : <span className="text-red-400 flex items-center gap-1"><AlertCircle size={12}/> FAIL</span>}
+                               </td>
+                               <td className="px-6 py-5 text-xs text-gray-400 font-medium">{new Date(log.timestamp).toLocaleString()}</td>
+                             </tr>
+                           ))}
+                        </tbody>
+                      </table>
+                   </div>
+                </div>
+              )}
+
               {activeTab === 'policies' && isAdmin && (
                 <div className="animate-in fade-in duration-300">
-                  <h2 className="text-3xl font-bold font-outfit mb-8">Policy Administration</h2>
-                  <div className="overflow-x-auto rounded-3xl border border-gray-100 shadow-sm">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-gray-50 border-b border-gray-100">
-                        <tr>
-                          <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Ref</th>
-                          <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Asset</th>
-                          <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">VIN</th>
-                          <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
-                          <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {paginatedPolicies.map(p => (
-                          <tr key={p.id} onClick={() => setViewingPolicy(p)} className="hover:bg-gray-50/50 cursor-pointer">
-                            <td className="px-6 py-5"><span className="text-xs font-mono">{p.id}</span></td>
-                            <td className="px-6 py-5">
-                               <div className="flex flex-col">
-                                 <span className="text-xs font-black uppercase">{p.details?.vrm}</span>
-                                 <span className="text-[10px] text-gray-400">{p.details?.make} {p.details?.model}</span>
-                               </div>
-                            </td>
-                            <td className="px-6 py-5"><span className="text-[10px] font-mono text-gray-400">{p.details?.vin || 'N/A'}</span></td>
-                            <td className="px-6 py-5">{getStatusBadge(p.status)}</td>
-                            <td className="px-6 py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                               <ActionButton onClick={() => setViewingPolicy(p)} icon={<Eye size={16} />} tooltip="View Intelligence" colorClass="bg-white" />
-                            </td>
+                   <h2 className="text-3xl font-bold font-outfit mb-10">Administrative Registry</h2>
+                   <div className="overflow-x-auto rounded-3xl border border-gray-100 shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b border-gray-100">
+                          <tr>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase text-gray-400">Asset</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase text-gray-400">Holder</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase text-gray-400">Status</th>
+                            <th className="px-6 py-5 text-[10px] font-black uppercase text-gray-400 text-center">Audit</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                           {paginatedPolicies.map(p => (
+                             <tr key={p.id} onClick={() => setViewingPolicy(p)} className="hover:bg-gray-50/50 cursor-pointer transition-colors">
+                               <td className="px-6 py-5">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-black uppercase tracking-widest">{p.details?.vrm}</span>
+                                    <span className="text-[10px] text-gray-400 font-bold">{p.details?.make} {p.details?.model}</span>
+                                  </div>
+                               </td>
+                               <td className="px-6 py-5 text-sm font-bold text-gray-600">{getCustomerName(p.userId)}</td>
+                               <td className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-[#e91e8c]">{p.status}</td>
+                               <td className="px-6 py-5 text-center" onClick={e => e.stopPropagation()}>
+                                  <ActionButton onClick={() => setViewingPolicy(p)} icon={<Eye size={16}/>} tooltip="Deep Audit" colorClass="bg-white border border-gray-100"/>
+                               </td>
+                             </tr>
+                           ))}
+                        </tbody>
+                      </table>
+                   </div>
                 </div>
               )}
             </div>

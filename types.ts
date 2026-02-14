@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export enum InsuranceType {
@@ -19,6 +18,18 @@ export type MIDStatus = 'Pending' | 'Success' | 'Failed' | 'Retrying';
 
 export type EnforcedInsuranceType = 'Comprehensive Cover' | 'Third Party Insurance' | 'Motorcycle Insurance';
 export type PolicyDuration = '1 Month' | '12 Months';
+
+export interface VehicleLookupLog {
+  id: string;
+  registration: string;
+  make: string;
+  model: string;
+  year: string;
+  source: 'API' | 'Cache' | 'Intelligence' | 'Manual';
+  timestamp: string;
+  success: boolean;
+  metadata?: any;
+}
 
 export interface MIDSubmission {
   id: string;
@@ -85,11 +96,12 @@ export interface VehicleDetails {
   address: string;
   ncb: string;
   excess: string;
-  // New Technical Fields
+  // Technical Specifications
   vin?: string;
   engineSize?: string;
   fuelType?: string;
   color?: string;
+  vehicleType?: string;
 }
 
 export interface Policy {
@@ -214,7 +226,6 @@ export interface QuoteData {
   isAccurate: boolean;
   termsAccepted: boolean;
   generated_quote?: number;
-  // New Technical Fields for Lookup
   vin?: string;
   color?: string;
 }

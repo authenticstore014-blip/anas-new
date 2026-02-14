@@ -1,23 +1,13 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { 
   Car, ShieldCheck, ArrowRight, Loader2,
-  AlertCircle, Bike, Search, ChevronDown, Lock, CheckCircle, Database,
-  ArrowLeft, User as UserIcon, Calendar, Clock, CreditCard, CheckCircle2,
-  Truck, HelpCircle, Info, Shield, Mail, Phone, MapPin, Fingerprint, Activity,
-  Settings, PenTool
+  AlertCircle, Bike, Search, CheckCircle,
+  Truck, Shield, User as UserIcon, CreditCard,
+  Info, Clock, Fingerprint, Activity, Database, Zap
 } from 'lucide-react';
-import { QuoteData, PolicyDuration, PolicyStatus, EnforcedInsuranceType } from '../types';
-import { GoogleGenAI } from "@google/genai";
-
-// PROD MOCK DATA FOR TESTING
-const VEHICLE_MOCK_DB: Record<string, any> = {
-  "SG71OYK": { make: "Tesla", model: "Model 3", year: "2021", fuelType: "Electric", engineSize: "N/A", color: "Pearl White", vin: "5YJ3E1EBXMF0XXXXX" },
-  "AB12CDE": { make: "Ford", model: "Fiesta", year: "2018", fuelType: "Petrol", engineSize: "998cc", color: "Race Red", vin: "WF0DXXGAKD0XXXXX" },
-  "BT66XZY": { make: "Volkswagen", model: "Golf", year: "2016", fuelType: "Diesel", engineSize: "1968cc", color: "Deep Black", vin: "WVWZZZAUZGWXXXXX" }
-};
+import { QuoteData } from '../types';
 
 const INITIAL_STATE: QuoteData = {
   vrm: '', 
@@ -44,95 +34,45 @@ const INITIAL_STATE: QuoteData = {
 };
 
 const QuotePage: React.FC = () => {
-  const { user, signup, bindPolicyManual } = useAuth();
+  const { user, signup, bindPolicyManual, lookupVehicle } = useAuth();
   const navigate = useNavigate();
   
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<QuoteData>(INITIAL_STATE);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupSource, setLookupSource] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [vehicleType, setVehicleType] = useState<'car' | 'van' | 'motorcycle'>('car');
   const [vehicleValue, setVehicleValue] = useState('5000');
 
-  const validateVRM = (vrm: string) => {
-    const normalized = vrm.replace(/\s/g, '').toUpperCase();
-    return normalized.length >= 5 && normalized.length <= 8;
-  };
-
   const handleLookup = async () => {
-    const vrmInput = formData.vrm.replace(/\s/g, '').toUpperCase();
-    if (!vrmInput) return;
-    
-    if (!validateVRM(vrmInput)) {
-      setLookupError("Invalid registration format. Use 5-8 chars.");
-      return;
-    }
-
+    if (!formData.vrm) return;
     setIsLookingUp(true);
     setLookupError(null);
+    setLookupSource(null);
 
-    // 1. CHECK MOCK DATABASE (Simulating Production DB Hit)
-    if (VEHICLE_MOCK_DB[vrmInput]) {
-      const data = VEHICLE_MOCK_DB[vrmInput];
+    const result = await lookupVehicle(formData.vrm);
+    if (result.success && result.data) {
+      const data = result.data;
       setFormData(prev => ({ 
         ...prev, 
         make: data.make, 
         model: data.model, 
-        year: data.year,
-        fuelType: data.fuelType,
-        engineSize: data.engineSize,
-        vin: data.vin,
-        color: data.color,
-        vrm: vrmInput
+        year: data.year?.toString() || '',
+        fuelType: data.fuelType || 'Petrol',
+        engineSize: data.engineSize || 'N/A',
+        vin: data.vin || '',
+        color: data.color || '',
+        vrm: formData.vrm.toUpperCase()
       }));
-      setIsLookingUp(false);
-      return;
-    }
-
-    // 2. FALLBACK TO AI LOOKUP (Gemini)
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Perform a high-fidelity UK DVLA/MIB vehicle lookup for registration: ${vrmInput}. Return ONLY a clean JSON object. Keys: "make", "model", "year", "fuelType", "engineSize", "color", "vin". If not found, return {"error": "NOT_FOUND"}.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { 
-          systemInstruction: "You are the SwiftPolicy Vehicle Registry Gateway. Provide highly accurate UK car specs.",
-          tools: [{googleSearch: {}}],
-        }
-      });
-
-      const responseText = response.text;
-      if (!responseText) throw new Error("EMPTY_RESPONSE");
-
-      const rawText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const data = JSON.parse(rawText);
-
-      if (data.make && !data.error) {
-        setFormData(prev => ({ 
-          ...prev, 
-          make: data.make, 
-          model: data.model, 
-          year: data.year?.toString() || '',
-          fuelType: data.fuelType || 'Petrol',
-          engineSize: data.engineSize || '',
-          vin: data.vin || '',
-          color: data.color || '',
-          vrm: vrmInput
-        }));
-      } else {
-        throw new Error("NOT_FOUND");
-      }
-    } catch (err) {
-      console.error("Lookup Failure:", err);
-      setLookupError("The central vehicle registry is currently slow. Please manually confirm your details.");
+      setLookupSource(result.source || 'Official Registry');
+    } else {
+      setLookupError(result.error || "Vehicle not found. Please enter details manually.");
       setIsManualEntry(true);
-    } finally {
-      setIsLookingUp(false);
     }
+    setIsLookingUp(false);
   };
 
   const calculatePremium = () => {
@@ -151,10 +91,9 @@ const QuotePage: React.FC = () => {
       let currentUserId = user?.id;
       if (!currentUserId) {
         const password = Math.random().toString(36).substr(2, 8) + 'A1!';
-        const name = `${formData.firstName} ${formData.lastName}`;
-        const ok = await signup(name, formData.email, password);
+        const ok = await signup(`${formData.firstName} ${formData.lastName}`, formData.email, password);
         if (!ok) {
-           setLookupError("Identity conflict detected. Please login.");
+           setLookupError("Email already in use. Please sign in.");
            setIsProcessing(false);
            return;
         }
@@ -162,23 +101,21 @@ const QuotePage: React.FC = () => {
       }
 
       if (currentUserId) {
-        const premium = calculatePremium();
         const success = await bindPolicyManual(currentUserId, {
           vehicleType,
           duration: formData.duration,
-          premium: premium.toString(),
-          status: formData.duration === '1 Month' ? 'Pending Validation' : 'Active',
+          premium: calculatePremium().toString(),
+          status: 'Active',
           details: {
             vrm: formData.vrm.toUpperCase(),
             make: formData.make,
             model: formData.model,
             year: formData.year,
             coverLevel: formData.coverLevel,
-            licenceNumber: formData.licenceNumber || 'AB123456',
+            licenceNumber: formData.licenceNumber || 'TEST_LIC_123',
             address: `${formData.addressLine1}, ${formData.city}, ${formData.postcode}`,
             ncb: formData.ncbYears,
             excess: formData.voluntaryExcess,
-            // New Technical Details
             vin: formData.vin,
             engineSize: formData.engineSize,
             fuelType: formData.fuelType,
@@ -188,39 +125,27 @@ const QuotePage: React.FC = () => {
         if (success) navigate('/customers');
       }
     } catch (err) {
-      console.error("Binding Failure:", err);
+      console.error(err);
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#faf8fa] py-20">
+    <div className="min-h-screen bg-[#faf8fa] py-20 font-inter">
       <div className="max-w-4xl mx-auto px-4">
         
-        {/* Progress System */}
-        <div className="mb-16 flex justify-between items-center px-8 md:px-24 relative">
-          <div className="absolute top-5 left-24 right-24 h-0.5 bg-gray-200 z-0" />
-          {[
-            { n: 1, label: 'Asset' },
-            { n: 2, label: 'Identity' },
-            { n: 3, label: 'Protection' },
-            { n: 4, label: 'Binding' }
-          ].map((s) => (
-            <div key={s.n} className="relative z-10 flex flex-col items-center gap-2">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all ${
-                step >= s.n ? 'bg-[#e91e8c] text-white border-[#e91e8c]' : 'bg-white text-gray-400 border-gray-200'
-              }`}>
-                {step > s.n ? <CheckCircle size={20} /> : s.n}
-              </div>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${step >= s.n ? 'text-[#e91e8c]' : 'text-gray-400'}`}>
-                {s.label}
-              </span>
+        {/* Step Indicator */}
+        <div className="mb-16 flex justify-between items-center px-12 relative">
+          <div className="absolute top-5 left-12 right-12 h-0.5 bg-gray-100 z-0" />
+          {[1, 2, 3, 4].map(s => (
+            <div key={s} className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all ${step >= s ? 'bg-[#e91e8c] text-white shadow-lg' : 'bg-white text-gray-300 border border-gray-100'}`}>
+              {step > s ? <CheckCircle size={20} /> : s}
             </div>
           ))}
         </div>
 
-        <div className="bg-white rounded-[64px] p-8 md:p-16 shadow-2xl border border-gray-100 min-h-[650px] flex flex-col">
+        <div className="bg-white rounded-[64px] p-8 md:p-16 shadow-2xl border border-gray-100 min-h-[600px] flex flex-col">
           
           {step === 1 && (
             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -228,7 +153,7 @@ const QuotePage: React.FC = () => {
                 <div className="bg-[#e91e8c]/10 p-4 rounded-2xl text-[#e91e8c] shadow-sm"><Car size={32} /></div>
                 <div>
                   <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Vehicle Intelligence</h1>
-                  <p className="text-gray-400 font-medium">Automatic specification retrieval via registry lookup.</p>
+                  <p className="text-gray-400 font-medium">Verified registry data for Car, Van, and Motorcycle.</p>
                 </div>
               </div>
 
@@ -290,35 +215,29 @@ const QuotePage: React.FC = () => {
               )}
 
               {formData.make && (
-                <div className="p-8 bg-[#2d1f2d] rounded-[40px] text-white flex flex-col md:flex-row items-center justify-between shadow-xl gap-8 relative overflow-hidden">
+                <div className="p-8 bg-[#2d1f2d] rounded-[40px] text-white flex flex-col md:flex-row items-center justify-between shadow-xl gap-8 relative overflow-hidden animate-in zoom-in-95">
                    <div className="absolute top-0 right-0 p-8 text-white/5 pointer-events-none"><Shield size={120} /></div>
                    <div className="relative z-10 flex items-center gap-6">
-                      <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-[#e91e8c] shadow-lg">
+                      <div className="w-16 h-16 bg-[#e91e8c] rounded-2xl flex items-center justify-center text-white shadow-lg">
                         <CheckCircle size={32} />
                       </div>
                       <div>
-                        <p className="text-[10px] font-black uppercase text-white/40 tracking-widest mb-1">Authenticated Asset</p>
-                        <p className="text-3xl font-black font-outfit uppercase tracking-tighter">{formData.make} {formData.model}</p>
-                        <div className="flex gap-4 mt-2 text-[9px] font-black uppercase tracking-[0.2em] text-[#e91e8c]">
-                           <span>{formData.fuelType}</span>
-                           <span>{formData.engineSize}</span>
-                           <span>{formData.color}</span>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Verified Asset</p>
+                          <span className="px-2 py-0.5 bg-white/10 rounded-full text-[8px] font-black text-[#e91e8c] uppercase">{lookupSource}</span>
                         </div>
+                        <p className="text-3xl font-black font-outfit uppercase tracking-tighter leading-none">{formData.make} {formData.model}</p>
+                        <div className="flex gap-4 mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-white/60">
+                           <span className="flex items-center gap-1"><Zap size={10} /> {formData.fuelType}</span>
+                           <span className="flex items-center gap-1"><Activity size={10} /> {formData.engineSize}</span>
+                           <span className="flex items-center gap-1"><Clock size={10} /> {formData.year}</span>
+                        </div>
+                        {formData.vin && <p className="mt-2 text-[8px] font-mono text-white/20 uppercase tracking-widest">VIN: {formData.vin}</p>}
                       </div>
                    </div>
-                   <button onClick={() => { setFormData(INITIAL_STATE); setIsManualEntry(false); }} className="relative z-10 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Change</button>
+                   <button onClick={() => { setFormData(INITIAL_STATE); setIsManualEntry(false); setLookupSource(null); }} className="relative z-10 px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Reset</button>
                 </div>
               )}
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-gray-400">Vehicle Market Value (£)</label>
-                <input 
-                  type="number" 
-                  className="w-full bg-gray-50 border border-gray-100 rounded-xl px-6 py-4 font-bold text-lg" 
-                  value={vehicleValue} 
-                  onChange={e => setVehicleValue(e.target.value)} 
-                />
-              </div>
 
               <div className="mt-auto pt-10">
                 <button 
@@ -326,7 +245,7 @@ const QuotePage: React.FC = () => {
                   onClick={() => setStep(2)}
                   className="w-full py-6 bg-[#2d1f2d] text-white rounded-3xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-30 shadow-2xl"
                 >
-                  Verify Driver Details <ArrowRight size={20} />
+                  Confirm Identity <ArrowRight size={20} />
                 </button>
               </div>
             </div>
@@ -334,11 +253,11 @@ const QuotePage: React.FC = () => {
 
           {step === 2 && (
             <div className="space-y-10 animate-in slide-in-from-right-8 duration-500">
-              <div className="flex items-center gap-6">
+               <div className="flex items-center gap-6">
                 <div className="bg-[#e91e8c]/10 p-4 rounded-2xl text-[#e91e8c]"><UserIcon size={32} /></div>
                 <div>
-                  <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Driver Identity</h1>
-                  <p className="text-gray-400 font-medium">Personal profile for risk assessment.</p>
+                  <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Driver Profile</h1>
+                  <p className="text-gray-400 font-medium">Verify your identity for the insurance contract.</p>
                 </div>
               </div>
 
@@ -352,21 +271,13 @@ const QuotePage: React.FC = () => {
                   <input className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Date of Birth</label>
-                  <input type="date" className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Licence Number</label>
-                  <input className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold uppercase" value={formData.licenceNumber} onChange={e => setFormData({...formData, licenceNumber: e.target.value})} />
-                </div>
-                <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-gray-400">Email Address</label>
                   <input type="email" className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase text-gray-400">NCB Years</label>
                    <select className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold" value={formData.ncbYears} onChange={e => setFormData({...formData, ncbYears: e.target.value})}>
-                     {[0,1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={n}>{n} Years</option>)}
+                     {[0,1,2,3,4,5,6,7,8,9,10,15].map(n => <option key={n} value={n}>{n} Years</option>)}
                    </select>
                 </div>
               </div>
@@ -378,7 +289,7 @@ const QuotePage: React.FC = () => {
                   onClick={() => setStep(3)}
                   className="flex-[2] py-5 bg-[#2d1f2d] text-white rounded-3xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 hover:bg-black transition-all shadow-xl"
                 >
-                  Configure Policy <ArrowRight size={18} />
+                  Set Protection <ArrowRight size={18} />
                 </button>
               </div>
             </div>
@@ -386,11 +297,11 @@ const QuotePage: React.FC = () => {
 
           {step === 3 && (
             <div className="space-y-10 animate-in slide-in-from-right-8 duration-500">
-              <div className="flex items-center gap-6">
+               <div className="flex items-center gap-6">
                 <div className="bg-[#e91e8c]/10 p-4 rounded-2xl text-[#e91e8c]"><ShieldCheck size={32} /></div>
                 <div>
                   <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Protection Matrix</h1>
-                  <p className="text-gray-400 font-medium">Select coverage levels and duration.</p>
+                  <p className="text-gray-400 font-medium">Select coverage levels and voluntary excess.</p>
                 </div>
               </div>
 
@@ -406,15 +317,15 @@ const QuotePage: React.FC = () => {
                     className={`p-6 rounded-[32px] border-2 text-left transition-all ${formData.coverLevel === opt.val ? 'border-[#e91e8c] bg-pink-50' : 'border-gray-100 hover:border-gray-200'}`}
                   >
                     <p className="font-bold text-[#2d1f2d]">{opt.label}</p>
-                    <p className="text-[10px] text-gray-400 mt-2">UK Standard Cover</p>
+                    <p className="text-[10px] text-gray-400 mt-2 font-black uppercase tracking-widest">Standard Cover</p>
                   </button>
                 ))}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Policy Duration</label>
-                    <div className="flex bg-gray-50 p-2 rounded-2xl">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Policy Term</label>
+                    <div className="flex bg-gray-50 p-2 rounded-2xl border border-gray-100">
                       <button onClick={() => setFormData({...formData, duration: '12 Months'})} className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase transition-all ${formData.duration === '12 Months' ? 'bg-white shadow-sm text-[#e91e8c]' : 'text-gray-400'}`}>12 Months</button>
                       <button onClick={() => setFormData({...formData, duration: '1 Month'})} className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase transition-all ${formData.duration === '1 Month' ? 'bg-white shadow-sm text-[#e91e8c]' : 'text-gray-400'}`}>1 Month</button>
                     </div>
@@ -422,31 +333,31 @@ const QuotePage: React.FC = () => {
                  <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Voluntary Excess</label>
                     <select className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 font-bold" value={formData.voluntaryExcess} onChange={e => setFormData({...formData, voluntaryExcess: e.target.value})}>
-                      <option value="£0">£0</option><option value="£250">£250</option><option value="£500">£500</option>
+                      <option value="£0">£0</option><option value="£250">£250</option><option value="£500">£500</option><option value="£1000">£1000</option>
                     </select>
                  </div>
               </div>
 
               <div className="flex gap-4 mt-auto pt-10">
                 <button onClick={() => setStep(2)} className="flex-1 py-5 border-2 border-gray-100 text-gray-400 rounded-3xl font-black uppercase tracking-widest text-xs hover:bg-gray-50 transition-all">Back</button>
-                <button onClick={() => setStep(4)} className="flex-[2] py-5 bg-[#2d1f2d] text-white rounded-3xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 hover:bg-black transition-all shadow-xl">Review & Bind <ArrowRight size={18} /></button>
+                <button onClick={() => setStep(4)} className="flex-[2] py-5 bg-[#2d1f2d] text-white rounded-3xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 hover:bg-black transition-all shadow-xl">Calculate Binding <ArrowRight size={18} /></button>
               </div>
             </div>
           )}
 
           {step === 4 && (
             <div className="space-y-10 animate-in slide-in-from-right-8 duration-500">
-              <div className="flex items-center gap-6">
+               <div className="flex items-center gap-6">
                 <div className="bg-[#e91e8c]/10 p-4 rounded-2xl text-[#e91e8c]"><CreditCard size={32} /></div>
                 <div>
-                  <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Binding & Premium</h1>
-                  <p className="text-gray-400 font-medium">Finalizing your insurance contract.</p>
+                  <h1 className="text-3xl font-bold font-outfit text-[#2d1f2d]">Binding Review</h1>
+                  <p className="text-gray-400 font-medium">Finalizing your annual insurance premium.</p>
                 </div>
               </div>
 
               <div className="p-12 bg-[#2d1f2d] rounded-[56px] text-white flex flex-col items-center justify-center shadow-2xl relative overflow-hidden">
-                <p className="text-[10px] font-black uppercase tracking-[0.4em] text-[#e91e8c] mb-2">Annual Premium</p>
-                <div className="flex items-end gap-1 mb-10 relative z-10">
+                <p className="text-[10px] font-black uppercase tracking-[0.4em] text-[#e91e8c] mb-2">Estimated Premium</p>
+                <div className="flex items-end gap-1 mb-12 relative z-10">
                   <span className="text-3xl font-bold text-white/20 mb-3">£</span>
                   <span className="text-8xl font-black font-outfit tracking-tighter tabular-nums leading-none">{calculatePremium()}</span>
                 </div>
