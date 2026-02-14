@@ -26,7 +26,7 @@ const MIDStatusPage: React.FC = () => {
   const [filter, setFilter] = useState<'All' | 'Success' | 'Failed' | 'Pending'>('All');
 
   const filteredSubmissions = useMemo(() => {
-    let data = midSubmissions;
+    let data = midSubmissions || [];
     if (filter !== 'All') {
       data = data.filter((s: MIDSubmission) => s.status === filter);
     }
@@ -40,15 +40,16 @@ const MIDStatusPage: React.FC = () => {
     return data;
   }, [midSubmissions, filter, debouncedSearchQuery]);
 
+  const stats = useMemo(() => ({
+    total: midSubmissions?.length || 0,
+    success: (midSubmissions || []).filter(s => s.status === 'Success').length,
+    failed: (midSubmissions || []).filter(s => s.status === 'Failed').length,
+    pending: (midSubmissions || []).filter(s => s.status === 'Pending' || s.status === 'Retrying').length
+  }), [midSubmissions]);
+
+  // Early returns must happen AFTER all hooks are defined
   if (isLoading) return null;
   if (!user || user.role !== 'admin') return <Navigate to="/auth" />;
-
-  const stats = useMemo(() => ({
-    total: midSubmissions.length,
-    success: midSubmissions.filter(s => s.status === 'Success').length,
-    failed: midSubmissions.filter(s => s.status === 'Failed').length,
-    pending: midSubmissions.filter(s => s.status === 'Pending' || s.status === 'Retrying').length
-  }), [midSubmissions]);
 
   return (
     <div className="min-h-screen bg-[#faf8fa] pb-20 font-inter">

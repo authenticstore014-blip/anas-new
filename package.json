@@ -1,5 +1,5 @@
 {
-  "name": "swiftpolicy-insurance",
+  "name": "swiftpolicy-insurance-333",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,11 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "^0.562.0",
-    "react-dom": "^19.2.3",
-    "react": "^19.2.3",
-    "react-router-dom": "^7.12.0",
-    "@google/genai": "^1.35.0"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "6.22.3",
+    "lucide-react": "0.454.0",
+    "@google/genai": "1.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -10,7 +10,7 @@ export enum InsuranceType {
 
 export type InquiryType = 'General' | 'Quote' | 'Payment' | 'Claim' | 'Technical' | 'Feedback';
 export type UserStatus = 'Active' | 'Blocked' | 'Suspended' | 'Frozen' | 'Deleted' | 'Locked' | 'Removed';
-export type PolicyStatus = 'Active' | 'Frozen' | 'Cancelled' | 'Terminated' | 'Expired' | 'Renewed' | 'Pending Validation';
+export type PolicyStatus = 'Active' | 'Frozen' | 'Cancelled' | 'Terminated' | 'Expired' | 'Renewed' | 'Pending Validation' | 'Validated' | 'Blocked' | 'Removed';
 export type RiskLevel = 'Low' | 'Medium' | 'High';
 export type ClaimStatus = 'Under Review' | 'Approved' | 'Rejected' | 'Docs Requested';
 export type KYCStatus = 'VERIFIED' | 'PENDING' | 'FAILED' | 'NONE';
@@ -160,6 +160,8 @@ export interface QuoteData {
   licenceType: string;
   licenceHeldYears: string;
   licenceDate: string;
+  // Added licenceNumber to fix Property 'licenceNumber' does not exist on type 'QuoteData'
+  licenceNumber: string;
   hasMedicalConditions: boolean;
   mainDriverHistory: {
     hasConvictions: boolean;
