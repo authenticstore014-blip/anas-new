@@ -9,7 +9,8 @@ import {
   ChevronDown, 
   Phone, 
   User,
-  Database
+  Database,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -77,15 +78,24 @@ const Header: React.FC = () => {
               </Link>
             ))}
             {isAdmin && (
-              <Link
-                to="/admin/mid-status"
-                className={`flex items-center gap-2 text-[15px] font-bold px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all ${
-                  isActive('/admin/mid-status') ? 'border-[#e91e8c] text-[#e91e8c]' : 'text-[#e91e8c]'
-                }`}
-              >
-                <Database size={16} />
-                MID Ops
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/admin/mid-status"
+                  className={`flex items-center gap-2 text-[13px] font-bold px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all ${
+                    isActive('/admin/mid-status') ? 'border-[#e91e8c] text-[#e91e8c]' : 'text-[#e91e8c]'
+                  }`}
+                >
+                  <Database size={14} /> MID
+                </Link>
+                <Link
+                  to="/admin/vin-logs"
+                  className={`flex items-center gap-2 text-[13px] font-bold px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all ${
+                    isActive('/admin/vin-logs') ? 'border-[#e91e8c] text-[#e91e8c]' : 'text-[#e91e8c]'
+                  }`}
+                >
+                  <Search size={14} /> VIN Intel
+                </Link>
+              </div>
             )}
           </nav>
 
@@ -139,13 +149,22 @@ const Header: React.FC = () => {
               </Link>
             ))}
             {isAdmin && (
-              <Link
-                to="/admin/mid-status"
-                onClick={() => setIsOpen(false)}
-                className="flex items-center gap-3 text-lg font-bold text-[#e91e8c] bg-white/5 p-3 rounded-xl"
-              >
-                <Database size={20} /> MID Operations
-              </Link>
+              <div className="space-y-2">
+                <Link
+                  to="/admin/mid-status"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 text-lg font-bold text-[#e91e8c] bg-white/5 p-3 rounded-xl"
+                >
+                  <Database size={20} /> MID Operations
+                </Link>
+                <Link
+                  to="/admin/vin-logs"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 text-lg font-bold text-[#e91e8c] bg-white/5 p-3 rounded-xl"
+                >
+                  <Search size={20} /> VIN Intelligence
+                </Link>
+              </div>
             )}
             <div className="pt-4 border-t border-white/10 space-y-4">
               <Link 

@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React;
 
 export enum InsuranceType {
   CAR = 'car',
@@ -86,6 +87,20 @@ export interface AuditLog {
   reason?: string;
 }
 
+export interface PremiumBreakdown {
+  base: number;
+  riskAdjustment: number;
+  ncbDiscount: number;
+  addons: number;
+  ipt: number;
+  adminFee: number;
+  total: number;
+  // Financial Transparency Fields
+  firstMonthCharge?: number;
+  fullAnnualPremium?: number;
+  remainingBalance?: number;
+}
+
 export interface VehicleDetails {
   vrm: string;
   make: string;
@@ -102,6 +117,20 @@ export interface VehicleDetails {
   fuelType?: string;
   color?: string;
   vehicleType?: string;
+  vehicleValue?: string;
+  // Metadata for Policy Display
+  firstName?: string;
+  lastName?: string;
+  dob?: string;
+  email?: string;
+  phone?: string;
+  yearsExperience?: string;
+  issueDate?: string;
+  startDate?: string;
+  expiryDate?: string;
+  paymentRef?: string;
+  paymentFrequency?: 'monthly' | 'annually';
+  breakdown?: PremiumBreakdown;
 }
 
 export interface Policy {
@@ -228,4 +257,5 @@ export interface QuoteData {
   generated_quote?: number;
   vin?: string;
   color?: string;
+  vehicleValue?: string;
 }
