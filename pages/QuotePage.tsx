@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +11,8 @@ import {
 import { QuoteData, PremiumBreakdown } from '../types';
 
 const VIN_REGEX = /^[A-HJ-NPR-Z0-9]{17}$/;
+// Standard UK Registration Format: 2 letters, 2 numbers, space (optional), 3 letters
+const UK_REG_REGEX = /^[A-Z]{2}[0-9]{2}\s?[A-Z]{3}$|^[A-Z]{1,3}\s?[0-9]{1,4}$|^[0-9]{1,4}\s?[A-Z]{1,3}$/i;
 
 const INITIAL_STATE: QuoteData = {
   vrm: '', 
@@ -68,13 +69,14 @@ const QuotePage: React.FC = () => {
   };
 
   const handleVINLookup = async () => {
-    if (!formData.vin || !VIN_REGEX.test(formData.vin.toUpperCase())) {
+    const cleanVin = formData.vin.trim().toUpperCase().replace(/\s/g, '');
+    if (!cleanVin || !VIN_REGEX.test(cleanVin)) {
       setLookupError("Please enter a valid 17-character VIN (A-Z, 0-9).");
       return;
     }
     setIsLookingUp(true);
     setLookupError(null);
-    const result = await lookupVIN(formData.vin);
+    const result = await lookupVIN(cleanVin);
     if (result.success && result.data) {
       populateFields(result.data, result.source || 'VIN Gateway');
     } else {
@@ -90,10 +92,21 @@ const QuotePage: React.FC = () => {
   };
 
   const handleRegLookup = async () => {
-    if (!formData.vrm) return;
+    const cleanReg = formData.vrm.trim().toUpperCase().replace(/\s/g, '');
+    
+    if (!cleanReg) {
+      setLookupError("Registration is required.");
+      return;
+    }
+
+    if (!UK_REG_REGEX.test(cleanReg)) {
+      setLookupError("Invalid registration format. Please enter a valid UK number plate.");
+      return;
+    }
+
     setIsLookingUp(true);
     setLookupError(null);
-    const result = await lookupVehicle(formData.vrm);
+    const result = await lookupVehicle(cleanReg);
     if (result.success && result.data) {
       populateFields(result.data, result.source || 'Official Registry');
     } else {
@@ -107,33 +120,27 @@ const QuotePage: React.FC = () => {
     const base = 450.00;
     let riskAdjustment = 0;
     
-    // Type loading
     if (vehicleType === 'van') riskAdjustment += 350;
     if (vehicleType === 'motorcycle') riskAdjustment -= 50;
 
-    // Value loading (2% of value)
     const val = parseFloat(formData.vehicleValue || '5000');
     riskAdjustment += (val * 0.02);
 
-    // Cover loading
     if (formData.coverLevel === 'Comprehensive') riskAdjustment += 150;
 
-    // NCB Discount
     const ncbYears = parseInt(formData.ncbYears || '0');
     const ncbDiscount = -((base + riskAdjustment) * (Math.min(ncbYears, 9) * 0.05));
 
-    // Addons
     let addonsCost = 0;
     if (formData.addons.breakdown) addonsCost += 45;
     if (formData.addons.legal) addonsCost += 25;
     if (formData.addons.protectedNcb) addonsCost += 35;
 
     const subtotal = base + riskAdjustment + ncbDiscount + addonsCost;
-    const ipt = subtotal * 0.12; // 12% IPT
+    const ipt = subtotal * 0.12; 
     const adminFee = 25.00;
     const total = subtotal + ipt + adminFee;
 
-    // Financial Transparency Logic: Calculate installment plan for Annual Policies
     let firstMonthCharge = total;
     let remainingBalance = 0;
     if (formData.duration === '12 Months' && formData.paymentFrequency === 'monthly') {
@@ -179,7 +186,7 @@ const QuotePage: React.FC = () => {
           vehicleType,
           duration: formData.duration,
           premium: premiumBreakdown.total.toFixed(2),
-          status: 'Pending Validation', // Default to pending for professional admin approval workflow
+          status: 'Pending Validation', 
           details: {
             vrm: formData.vrm.toUpperCase(),
             make: formData.make,
@@ -222,7 +229,6 @@ const QuotePage: React.FC = () => {
     <div className="min-h-screen bg-[#faf8fa] py-20 font-inter">
       <div className="max-w-4xl mx-auto px-4">
         
-        {/* Enterprise Progress Tracking */}
         <div className="mb-16 flex justify-between items-center px-12 relative">
           <div className="absolute top-5 left-12 right-12 h-0.5 bg-gray-200 z-0" />
           {[1, 2, 3, 4].map(s => (

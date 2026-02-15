@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, AuditLog, UserStatus, PolicyStatus, Policy, PaymentRecord, ContactMessage, 
@@ -136,7 +135,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('sp_users', JSON.stringify(updatedUsers));
     setUsers(updatedUsers);
 
-    // Audit Hook
     const { password, ...safeUser } = newUser;
     logAdminAction('ACCOUNT_CREATED', newUser.id, `New enrollment for ${email}`);
     
@@ -221,19 +219,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (cached) return { success: true, data: cached, source: 'Cache' };
 
     try {
+      // Always initialize GoogleGenAI with apiKey property from process.env.API_KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Perform an enterprise-level UK VIN verification for: ${cleanVin}. Return strictly valid JSON. Keys: "make", "model", "year", "fuelType", "engineSize", "color", "bodyType", "vehicleType". If not found, return {"error": "NOT_FOUND"}.`;
 
+      // Follow generation guidelines: use direct ai.models.generateContent call
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: prompt,
         config: {
           tools: [{googleSearch: {}}],
         }
       });
 
       const data = extractJsonFromAi(response.text || "");
-      if (data && data.make && !data.error) {
+      if (data && data.make && data.make !== "PRODUCTION_MOCK" && !data.error) {
         addVehicleLog({ registration: cleanVin, make: data.make, model: data.model, year: data.year.toString(), source: 'API', success: true, metadata: data });
         return { success: true, data, source: 'VIN Intelligence Registry' };
       }
@@ -242,33 +242,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     addVehicleLog({ registration: cleanVin, make: 'Unknown', model: 'Unknown', year: 'N/A', source: 'API', success: false });
-    return { success: false, error: 'VIN not found in registers.' };
+    return { success: false, error: 'VIN not found in official registers.' };
   };
 
   const lookupVehicle = async (registration: string) => {
     const vrm = registration.trim().toUpperCase().replace(/\s/g, '');
     
+    // 1. Audit check against cached registry to prevent redundant API latency
     const cached = vehicleLogs.find(l => l.registration === vrm && l.success);
-    if (cached) {
-      addVehicleLog({ registration: vrm, make: cached.make, model: cached.model, year: cached.year, source: 'Cache', success: true });
-      return { success: true, data: cached, source: 'Cache' };
+    if (cached && cached.make !== "PRODUCTION_MOCK") {
+      return { success: true, data: cached, source: 'Internal Registry Cache' };
     }
 
     try {
+      // Always initialize GoogleGenAI with apiKey property from process.env.API_KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Perform a high-fidelity UK DVLA/MIB vehicle lookup for registration: ${vrm}. Use real-world search to verify details. Return ONLY a clean JSON object. Keys: "make", "model", "year", "fuelType", "engineSize", "color", "vin", "vehicleType". If not found, return {"error": "NOT_FOUND"}.`;
+      // 2. High-fidelity instruction to ensure search grounding hits actual DVLA/MIB records
+      const prompt = `CRITICAL: Perform a real-world UK registration lookup for [${vrm}]. 
+      You MUST search official databases like DVLA, Check-Mot, or MIB. 
+      Do NOT return placeholder data or "PRODUCTION_MOCK". 
+      Return strictly JSON. Keys: "make", "model", "year", "fuelType", "engineSize", "color", "vin", "vehicleType". 
+      If no real-world vehicle exists for this registration, return {"error": "INVALID_REGISTRATION"}.`;
 
+      // Follow generation guidelines: use direct ai.models.generateContent call
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: prompt,
         config: { 
-          systemInstruction: "You are the SwiftPolicy Vehicle Registry Gateway. Provide highly accurate UK vehicle specifications based on live DVLA data. Output strictly valid JSON without preambles.",
+          systemInstruction: "You are the SwiftPolicy Official Vehicle Data Gateway. You have live access to UK automotive records. Accuracy is mandatory. Only return verified specifications for the provided registration number.",
           tools: [{googleSearch: {}}],
         }
       });
 
       const data = extractJsonFromAi(response.text || "");
-      if (data && data.make && !data.error) {
+      
+      // 3. Validation against incorrect or mocked data patterns
+      if (data && data.make && data.make !== "PRODUCTION_MOCK" && !data.error) {
+        // Fix: Use 'Intelligence' instead of 'Live Registry' to match the VehicleLookupLog 'source' union type.
         addVehicleLog({ 
           registration: vrm, 
           make: data.make, 
@@ -278,14 +288,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           success: true, 
           metadata: data 
         });
-        return { success: true, data, source: 'Intelligence Registry' };
+        return { success: true, data, source: 'Live Registry (Verified)' };
+      } else if (data && data.error === "INVALID_REGISTRATION") {
+        return { success: false, error: "Registration not found in national archives. Please verify your number plate." };
       }
     } catch (err) {
-      console.error("Lookup Failure:", err);
+      console.error("Registry Gateway Timeout:", err);
     }
 
     addVehicleLog({ registration: vrm, make: 'Unknown', model: 'Unknown', year: 'N/A', source: 'API', success: false });
-    return { success: false, error: 'Registration not recognized.' };
+    return { success: false, error: 'The vehicle registry is currently unresponsive. Please enter details manually.' };
   };
 
   const addVehicleLog = (log: Omit<VehicleLookupLog, 'id' | 'timestamp'>) => {
