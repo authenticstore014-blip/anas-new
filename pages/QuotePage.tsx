@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
@@ -15,8 +15,11 @@ import {
   CheckCircle2, CreditCard as PaymentIcon,
   Edit3, RotateCcw, CalendarDays
 } from 'lucide-react';
-import { QuoteData, PremiumBreakdown, AdditionalDriver, PastClaim, Conviction } from '../types';
+import { QuoteData, PremiumBreakdown, AdditionalDriver, PastClaim, Conviction, Policy, User } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import { PolicyDocumentView } from '../components/PolicyDocumentView';
 
 const INITIAL_STATE: QuoteData = {
   vrm: '', 
@@ -37,7 +40,7 @@ const INITIAL_STATE: QuoteData = {
   mainDriverHistory: { hasConvictions: false, convictions: [], hasClaims: false, claims: [] },
   ncbYears: '5', isCurrentlyInsured: true, hasPreviousCancellations: false,
   additionalDrivers: [],
-  postcode: '', addressLine1: '', addressLine2: '', city: '', county: '', yearsAtAddress: '5+', homeOwnership: 'Owner',
+  postcode: '', addressLine1: '', addressLine2: '', city: '', county: '', state: '', country: 'United Kingdom', yearsAtAddress: '5+', homeOwnership: 'Owner',
   coverLevel: 'Comprehensive', policyStartDate: new Date().toISOString().split('T')[0], voluntaryExcess: '£250',
   addons: { breakdown: false, legal: false, courtesyCar: false, windscreen: false, protectedNcb: false, keyCover: false },
   paymentFrequency: 'monthly', payerType: 'individual',
@@ -57,11 +60,14 @@ const QuotePage: React.FC = () => {
   const [lookupMethod, setLookupMethod] = useState<'REG' | 'VIN'>('REG');
   const [vehicleType, setVehicleType] = useState<'car' | 'van' | 'motorcycle'>('car');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [policyForEmail, setPolicyForEmail] = useState<{ policy: Policy, user: User } | null>(null);
+  const emailDocumentRef = useRef<HTMLDivElement>(null);
   const [isManualMode, setIsManualMode] = useState(false);
   
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
   const [addressResults, setAddressResults] = useState<string[]>([]);
   const [addressError, setAddressError] = useState<string | null>(null);
+  const [showAddressFields, setShowAddressFields] = useState(false);
 
   const [isScanningRisk, setIsScanningRisk] = useState(false);
   const [riskScanComplete, setRiskScanComplete] = useState(false);
@@ -173,7 +179,7 @@ const QuotePage: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Find valid street addresses for the UK postcode: ${formData.postcode}. Return strictly a JSON object with a list of addresses.`,
+        contents: `Find valid street addresses for the UK postcode: ${formData.postcode}. Include city, county/state, and country. Return strictly a JSON object.`,
         config: {
           tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
@@ -184,7 +190,14 @@ const QuotePage: React.FC = () => {
                 type: Type.ARRAY,
                 items: {
                   type: Type.OBJECT,
-                  properties: { line1: { type: Type.STRING }, city: { type: Type.STRING } },
+                  properties: { 
+                    line1: { type: Type.STRING }, 
+                    line2: { type: Type.STRING },
+                    city: { type: Type.STRING },
+                    county: { type: Type.STRING },
+                    state: { type: Type.STRING },
+                    country: { type: Type.STRING }
+                  },
                   required: ["line1", "city"]
                 }
               }
@@ -195,11 +208,22 @@ const QuotePage: React.FC = () => {
       });
       const data = JSON.parse(response.text || '{"addresses": []}');
       if (data.addresses?.length > 0) {
+        const first = data.addresses[0];
+        setFormData(prev => ({
+          ...prev,
+          city: first.city || prev.city,
+          county: first.county || prev.county,
+          state: first.state || first.county || prev.state,
+          country: first.country || 'United Kingdom'
+        }));
+        setShowAddressFields(true);
         setAddressResults(data.addresses.map((a: any) => ({
           line1: a.line1,
           line2: a.line2 || '',
           city: a.city,
           county: a.county || '',
+          state: a.state || a.county || '',
+          country: a.country || 'United Kingdom',
           full: `${a.line1}${a.line2 ? ', ' + a.line2 : ''}, ${a.city}${a.county ? ', ' + a.county : ''}`
         })));
       } else {
@@ -233,6 +257,78 @@ const QuotePage: React.FC = () => {
     });
   };
 
+  const sendPolicyEmail = async (policy: Policy, email: string, firstName: string, lastName: string) => {
+    // Small delay to ensure the hidden component is rendered
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (!emailDocumentRef.current) return;
+    
+    try {
+      const canvas = await html2canvas(emailDocumentRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('policy-document-container');
+          if (el) {
+            el.style.display = 'block';
+            el.style.visibility = 'visible';
+            el.style.backgroundColor = '#ffffff';
+            
+            const allElements = el.querySelectorAll('*');
+            allElements.forEach((node: any) => {
+              if (node.style) {
+                const style = window.getComputedStyle(node);
+                const bg = style.backgroundColor;
+                const color = style.color;
+                const border = style.borderColor;
+                
+                if (bg.includes('oklch') || bg.includes('oklab')) node.style.backgroundColor = '#ffffff';
+                if (color.includes('oklch') || color.includes('oklab')) node.style.color = '#000000';
+                if (border.includes('oklch') || border.includes('oklab')) node.style.borderColor = '#e5e7eb';
+              }
+            });
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      while (heightLeft > 0) {
+        position -= pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      const pdfBase64 = pdf.output('datauristring');
+
+      await fetch('/api/send-policy-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          pdfBase64,
+          policyId: policy.displayId || policy.id,
+          firstName,
+          lastName
+        })
+      });
+    } catch (error) {
+      console.error("Background email generation failed:", error);
+    }
+  };
+
   const handleFinalBinding = async () => {
     if (!cardDetails.number || !cardDetails.expiry || !cardDetails.firstName || !cardDetails.lastName) {
       alert("Please complete all Bank Card details to proceed with policy binding.");
@@ -242,18 +338,24 @@ const QuotePage: React.FC = () => {
     setIsProcessing(true);
     try {
       let activeUserId = user?.id;
+      let activeUser = user;
+      
       if (!activeUserId) {
         const created = await signup(`${formData.firstName} ${formData.lastName}`, formData.email, authForm.password, {
           address_line1: formData.addressLine1,
           address_line2: formData.addressLine2,
           city: formData.city,
           county: formData.county,
+          state: formData.state,
+          country: formData.country,
           postcode: formData.postcode
         });
         if (!created) { setIsProcessing(false); return; }
-        activeUserId = JSON.parse(localStorage.getItem('sp_session') || '{}').id;
+        activeUser = JSON.parse(localStorage.getItem('sp_session') || '{}');
+        activeUserId = activeUser?.id;
       }
-      if (activeUserId) {
+      
+      if (activeUserId && activeUser) {
         const lastFour = cardDetails.number.replace(/\s/g, '').slice(-4);
         const cardMeta = {
           cardLastFour: lastFour,
@@ -263,7 +365,7 @@ const QuotePage: React.FC = () => {
 
         const durationDays = formData.policy_type === 'ONE_MONTH' ? 30 : 365;
 
-        await bindPolicyManual(activeUserId, {
+        const createdPolicy = await bindPolicyManual(activeUserId, {
           vehicleType, 
           policy_type: formData.policy_type,
           duration: formData.duration,
@@ -276,6 +378,14 @@ const QuotePage: React.FC = () => {
             expiryDate: new Date(Date.now() + (durationDays * 24 * 60 * 60 * 1000)).toISOString() 
           }
         });
+
+        if (createdPolicy) {
+          // Trigger background email sending
+          setPolicyForEmail({ policy: createdPolicy, user: activeUser });
+          // Fire and forget email sending
+          sendPolicyEmail(createdPolicy, formData.email, formData.firstName, formData.lastName);
+        }
+
         navigate('/portal');
       }
     } catch (e) { console.error(e); }
@@ -355,6 +465,15 @@ const QuotePage: React.FC = () => {
                       {isSearchingAddress ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
                     </button>
                   </div>
+                  {addressError && <p className="mt-2 text-[10px] font-bold text-red-500">{addressError}</p>}
+                  {!showAddressFields && (
+                    <button 
+                      onClick={() => setShowAddressFields(true)}
+                      className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#e91e8c] hover:underline flex items-center gap-1"
+                    >
+                      <Edit3 size={12} /> Enter address manually
+                    </button>
+                  )}
                   {addressResults.length > 0 && (
                     <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-white border border-gray-100 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                       {addressResults.map((addr: any, i) => (
@@ -366,9 +485,12 @@ const QuotePage: React.FC = () => {
                               addressLine1: addr.line1, 
                               addressLine2: addr.line2,
                               city: addr.city,
-                              county: addr.county
+                              county: addr.county,
+                              state: addr.state,
+                              country: addr.country
                             }); 
                             setAddressResults([]); 
+                            setShowAddressFields(true);
                           }} 
                           className="w-full text-left px-6 py-4 text-sm font-bold text-gray-600 hover:bg-pink-50 hover:text-[#e91e8c] border-b border-gray-50 last:border-0"
                         >
@@ -378,25 +500,29 @@ const QuotePage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                {formData.addressLine1 && (
+                {showAddressFields && (
                   <div className="grid grid-cols-1 gap-4 animate-in fade-in slide-in-from-top-2">
                     <div>
-                      <FormLabel label="Address Line 1" />
-                      <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold outline-none" value={formData.addressLine1} onChange={e => setFormData({...formData, addressLine1: e.target.value})} />
+                      <FormLabel label="Address Line 1" required />
+                      <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold focus:border-[#e91e8c] outline-none" value={formData.addressLine1} onChange={e => setFormData({...formData, addressLine1: e.target.value})} placeholder="House number and street name" />
                     </div>
                     <div>
                       <FormLabel label="Address Line 2 (Optional)" />
-                      <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold outline-none" value={formData.addressLine2} onChange={e => setFormData({...formData, addressLine2: e.target.value})} />
+                      <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold focus:border-[#e91e8c] outline-none" value={formData.addressLine2} onChange={e => setFormData({...formData, addressLine2: e.target.value})} placeholder="Apartment, suite, unit, etc." />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <FormLabel label="City" />
-                        <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold outline-none" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
+                        <FormLabel label="City" required />
+                        <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold focus:border-[#e91e8c] outline-none" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
                       </div>
                       <div>
-                        <FormLabel label="County" />
-                        <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold outline-none" value={formData.county} onChange={e => setFormData({...formData, county: e.target.value})} />
+                        <FormLabel label="State / Province" required />
+                        <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold focus:border-[#e91e8c] outline-none" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} />
                       </div>
+                    </div>
+                    <div>
+                      <FormLabel label="Country" required />
+                      <input className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 text-[#2d1f2d] font-bold focus:border-[#e91e8c] outline-none" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} />
                     </div>
                   </div>
                 )}
@@ -766,6 +892,17 @@ const QuotePage: React.FC = () => {
           </div>
         </div>
         <div className="bg-white rounded-[80px] p-10 md:p-24 shadow-2xl shadow-pink-900/5 border border-gray-100 min-h-[750px] flex flex-col relative overflow-hidden"><div className="absolute top-0 right-0 w-64 h-64 bg-[#e91e8c]/5 rounded-bl-[200px] pointer-events-none" />{renderStep()}</div>
+        
+        {/* HIDDEN DOCUMENT GENERATOR FOR EMAIL ATTACHMENT */}
+        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '210mm' }}>
+           {policyForEmail && (
+             <PolicyDocumentView 
+               policy={policyForEmail.policy} 
+               user={policyForEmail.user} 
+               documentRef={emailDocumentRef} 
+             />
+           )}
+        </div>
       </div>
     </div>
   );

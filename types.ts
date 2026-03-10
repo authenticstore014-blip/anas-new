@@ -149,6 +149,7 @@ export interface User {
   county?: string;
   state?: string;
   postcode?: string;
+  country?: string;
   role: 'customer' | 'admin';
   status: UserStatus;
   is_profile_enabled?: boolean;
@@ -205,6 +206,8 @@ export interface VehicleDetails {
   addressLine2?: string;
   city?: string;
   county?: string;
+  state?: string;
+  country?: string;
   postcode?: string;
   ncb: string;
   excess: string;
@@ -310,6 +313,8 @@ export interface QuoteData {
   addressLine2: string;
   city: string;
   county: string;
+  state?: string;
+  country?: string;
   yearsAtAddress: string;
   homeOwnership: string;
   coverLevel: string;

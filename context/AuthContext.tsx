@@ -34,9 +34,10 @@ interface AuthContextType {
   updateUserRisk: (id: string, risk: RiskLevel, reason: string) => void;
   updateUserNotes: (id: string, notes: string) => void;
   validateUserIdentity: (id: string, status: KYCStatus, reason: string) => void;
-  updatePolicyStatus: (id: string, status: PolicyStatus, reason?: string) => void;
-  updatePolicyNotes: (id: string, notes: string) => void;
-  removePolicy: (id: string, reason: string) => void;
+  updatePolicyStatus: (id: string, status: PolicyStatus, reason?: string) => Promise<void>;
+  updatePolicyNotes: (id: string, notes: string) => Promise<void>;
+  removePolicy: (id: string, reason: string) => Promise<void>;
+  removeUser: (id: string, reason: string) => Promise<void>;
   updatePolicyRenewal: (id: string, date: string) => void;
   createClaim: (claim: Partial<ClaimRecord>) => void;
   updateClaimStatus: (id: string, status: ClaimStatus, notes: string) => void;
@@ -48,7 +49,7 @@ interface AuthContextType {
   lookupVIN: (vin: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   runDiagnostics: () => Promise<any>;
   retryMIDSubmission: (id: string) => Promise<void>;
-  refreshData: () => void;
+  refreshData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -78,18 +79,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [riskConfig, setRiskConfig] = useState<RiskConfig>(DEFAULT_RISK_CONFIG);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refreshData = useCallback(() => {
-    setUsers(JSON.parse(localStorage.getItem('sp_users') || '[]'));
+  const refreshData = useCallback(async () => {
+    // Fetch all data from backend API
+    try {
+      const [
+        usersRes, policiesRes, claimsRes, paymentsRes, 
+        auditLogsRes, adminActivityLogsRes, ticketsRes, riskConfigRes,
+        midRes, vehicleRes
+      ] = await Promise.all([
+        fetch('/api/users'),
+        fetch('/api/policies'),
+        fetch('/api/claims'),
+        fetch('/api/payments'),
+        fetch('/api/audit-logs'),
+        fetch('/api/admin-activity-logs'),
+        fetch('/api/tickets'),
+        fetch('/api/risk-config'),
+        fetch('/api/mid-submissions'),
+        fetch('/api/vehicle-logs')
+      ]);
+
+      if (usersRes.ok) setUsers(await usersRes.json());
+      if (policiesRes.ok) setPolicies(await policiesRes.json());
+      if (claimsRes.ok) setClaims(await claimsRes.json());
+      if (paymentsRes.ok) setPayments(await paymentsRes.json());
+      if (auditLogsRes.ok) setAuditLogs(await auditLogsRes.json());
+      if (adminActivityLogsRes.ok) setAdminActivityLogs(await adminActivityLogsRes.json());
+      if (ticketsRes.ok) setTickets(await ticketsRes.json());
+      if (midRes.ok) setMidSubmissions(await midRes.json());
+      if (vehicleRes.ok) setVehicleLogs(await vehicleRes.json());
+      if (riskConfigRes.ok) {
+        const config = await riskConfigRes.json();
+        setRiskConfig(Object.keys(config).length > 0 ? config : DEFAULT_RISK_CONFIG);
+      }
+    } catch (error) {
+      console.error("Failed to refresh data from backend:", error);
+      // Fallback to localStorage if backend is unreachable
+      setUsers(JSON.parse(localStorage.getItem('sp_users') || '[]'));
+      setPolicies(JSON.parse(localStorage.getItem('sp_policies') || '[]'));
+      setClaims(JSON.parse(localStorage.getItem('sp_claims') || '[]'));
+      setPayments(JSON.parse(localStorage.getItem('sp_payment_data') || '[]'));
+      setAuditLogs(JSON.parse(localStorage.getItem('sp_audit_logs') || '[]'));
+      setAdminActivityLogs(JSON.parse(localStorage.getItem('sp_admin_activity_logs') || '[]'));
+      setTickets(JSON.parse(localStorage.getItem('sp_tickets') || '[]'));
+      setMidSubmissions(JSON.parse(localStorage.getItem('sp_mid_submissions') || '[]'));
+      setVehicleLogs(JSON.parse(localStorage.getItem('sp_vehicle_logs') || '[]'));
+      setRiskConfig(JSON.parse(localStorage.getItem('sp_risk_config') || JSON.stringify(DEFAULT_RISK_CONFIG)));
+    }
+
     setAdminUsers(JSON.parse(localStorage.getItem('sp_admin_users') || '[]'));
-    setPolicies(JSON.parse(localStorage.getItem('sp_policies') || '[]'));
-    setClaims(JSON.parse(localStorage.getItem('sp_claims') || '[]'));
-    setPayments(JSON.parse(localStorage.getItem('sp_payment_data') || '[]'));
-    setMidSubmissions(JSON.parse(localStorage.getItem('sp_mid_submissions') || '[]'));
-    setVehicleLogs(JSON.parse(localStorage.getItem('sp_vehicle_logs') || '[]'));
-    setAuditLogs(JSON.parse(localStorage.getItem('sp_audit_logs') || '[]'));
-    setAdminActivityLogs(JSON.parse(localStorage.getItem('sp_admin_activity_logs') || '[]'));
-    setTickets(JSON.parse(localStorage.getItem('sp_tickets') || '[]'));
-    setRiskConfig(JSON.parse(localStorage.getItem('sp_risk_config') || JSON.stringify(DEFAULT_RISK_CONFIG)));
     
     // Independent session restoration
     const clientSession = localStorage.getItem('sp_session');
@@ -102,8 +140,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    refreshData();
-    setIsLoading(false);
+    const init = async () => {
+      await refreshData();
+      setIsLoading(false);
+    };
+    init();
   }, [refreshData]);
 
   const login = async (email: string, password: string, isAdmin: boolean = false) => {
@@ -136,8 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signup = async (name: string, email: string, password: string, additionalFields: Partial<User> = {}) => {
-    const currentUsers = JSON.parse(localStorage.getItem('sp_users') || '[]');
-    if (currentUsers.find((u: User) => u.email === email)) return false;
+    if (users.find((u: User) => u.email === email)) return false;
 
     const now = new Date().toISOString();
     const newUser: User = { 
@@ -145,9 +185,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       client_code: `SP-${Math.floor(10000 + Math.random() * 90000)}`,
       first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' '),
       name, email, role: 'customer', 
-      status: 'Active', // Immediately Active
-      is_profile_enabled: true, // Automatically enable new profiles
-      account_state: 'active', // Immediately Active
+      status: 'Active', 
+      is_profile_enabled: true, 
+      account_state: 'active', 
       risk_factor: 'low', 
       createdAt: now,
       updated_at: now,
@@ -155,29 +195,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...additionalFields
     };
     
-    const updated = [newUser, ...currentUsers];
-    localStorage.setItem('sp_users', JSON.stringify(updated));
-    setUsers(updated);
-    setUser(newUser);
-    localStorage.setItem('sp_session', JSON.stringify(newUser));
-    
-    // Log registration
-    const audit: AuditLog[] = JSON.parse(localStorage.getItem('sp_audit_logs') || '[]');
-    const log: AuditLog = {
-      id: `AUDIT-${Date.now()}`,
-      timestamp: now,
-      userId: newUser.id,
-      userEmail: newUser.email,
-      targetId: newUser.id,
-      action: 'USER_REGISTER',
-      details: `New policy buyer enrolled. Status: Active. Profile and access enabled immediately.`,
-      ipAddress: '127.0.0.1',
-      entityType: 'USER'
-    };
-    localStorage.setItem('sp_audit_logs', JSON.stringify([log, ...audit]));
-    setAuditLogs([log, ...audit]);
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
 
-    return true;
+      if (response.ok) {
+        setUsers(prev => [newUser, ...prev]);
+        setUser(newUser);
+        localStorage.setItem('sp_session', JSON.stringify(newUser));
+        
+        // Log registration
+        const log: AuditLog = {
+          id: `AUDIT-${Date.now()}`,
+          timestamp: now,
+          userId: newUser.id,
+          userEmail: newUser.email,
+          targetId: newUser.id,
+          action: 'USER_REGISTER',
+          details: `New policy buyer enrolled. Status: Active. Profile and access enabled immediately.`,
+          ipAddress: '127.0.0.1',
+          entityType: 'USER'
+        };
+        
+        await fetch('/api/audit-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(log)
+        });
+        
+        setAuditLogs(prev => [log, ...prev]);
+        return true;
+      }
+    } catch (error) {
+      console.error("Signup failed:", error);
+    }
+
+    return false;
   };
 
   const logout = () => {
@@ -190,166 +246,255 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('sp_admin_session');
   };
 
-  const updateUserStatus = (id: string, status: UserStatus, reason: string) => {
-    const currentUsers: User[] = JSON.parse(localStorage.getItem('sp_users') || '[]');
+  const updateUserStatus = async (id: string, status: UserStatus, reason: string) => {
     const now = new Date().toISOString();
-    
-    const updated = currentUsers.map(u => u.id === id ? { 
-      ...u, 
+    const updates = { 
       status, 
-      is_profile_enabled: status === 'Active' ? true : u.is_profile_enabled,
+      is_profile_enabled: status === 'Active' ? true : undefined,
       account_state: status === 'Active' ? 'active' : 'suspended' as any,
       updated_at: now 
-    } : u);
-    
-    localStorage.setItem('sp_users', JSON.stringify(updated));
-    setUsers(updated);
-
-    // Record audit trails for the status change
-    const audit: AuditLog[] = JSON.parse(localStorage.getItem('sp_audit_logs') || '[]');
-    const logAction = status === 'Active' ? 'Profile Activated' : 'USER_STATUS_CHANGE';
-    const logDetails = status === 'Active' 
-      ? 'Profile activated and account enabled by administrator.' 
-      : `Account status updated to ${status}. Reason: ${reason}`;
-
-    const log: AuditLog = {
-      id: `AUDIT-${Date.now()}`,
-      timestamp: now,
-      userId: adminUser?.id || 'SYSTEM',
-      userEmail: adminUser?.email || 'SYSTEM',
-      targetId: id,
-      action: logAction,
-      details: logDetails,
-      ipAddress: '127.0.0.1',
-      entityType: 'USER'
     };
-    localStorage.setItem('sp_audit_logs', JSON.stringify([log, ...audit]));
-    setAuditLogs([log, ...audit]);
 
-    // Add to specific admin activity logs for dashboard visibility
-    const adminLogs: AdminActivityLog[] = JSON.parse(localStorage.getItem('sp_admin_activity_logs') || '[]');
-    const adminLog: AdminActivityLog = {
-      id: `AL-${Date.now()}`,
-      admin_id: adminUser?.id || 'SYSTEM',
-      user_id: id,
-      action_performed: logAction,
-      timestamp: now
-    };
-    localStorage.setItem('sp_admin_activity_logs', JSON.stringify([adminLog, ...adminLogs]));
-    setAdminActivityLogs([adminLog, ...adminLogs]);
-    
-    // Safety check for session consistency
-    if (user?.id === id) {
-      const updatedSession = { 
-        ...user, 
-        status, 
-        is_profile_enabled: status === 'Active' ? true : user.is_profile_enabled,
-        account_state: status === 'Active' ? 'active' : 'suspended' as any,
-        updated_at: now 
-      };
-      setUser(updatedSession);
-      localStorage.setItem('sp_session', JSON.stringify(updatedSession));
+    try {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setUsers(prev => prev.map(u => u.id === id ? updatedUser : u));
+
+        // Record audit trails
+        const logAction = status === 'Active' ? 'Profile Activated' : 'USER_STATUS_CHANGE';
+        const logDetails = status === 'Active' 
+          ? 'Profile activated and account enabled by administrator.' 
+          : `Account status updated to ${status}. Reason: ${reason}`;
+
+        const log: AuditLog = {
+          id: `AUDIT-${Date.now()}`,
+          timestamp: now,
+          userId: adminUser?.id || 'SYSTEM',
+          userEmail: adminUser?.email || 'SYSTEM',
+          targetId: id,
+          action: logAction,
+          details: logDetails,
+          ipAddress: '127.0.0.1',
+          entityType: 'USER'
+        };
+        
+        fetch('/api/audit-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(log)
+        });
+        setAuditLogs(prev => [log, ...prev]);
+
+        // Admin activity log
+        const adminLog: AdminActivityLog = {
+          id: `AL-${Date.now()}`,
+          admin_id: adminUser?.id || 'SYSTEM',
+          user_id: id,
+          action_performed: logAction,
+          timestamp: now
+        };
+        fetch('/api/admin-activity-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adminLog)
+        });
+        setAdminActivityLogs(prev => [adminLog, ...prev]);
+        
+        if (user?.id === id) {
+          setUser(updatedUser);
+          localStorage.setItem('sp_session', JSON.stringify(updatedUser));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update user status:", error);
     }
   };
 
   const activateUserProfile = async (userId: string): Promise<User | null> => {
-    const currentUsers: User[] = JSON.parse(localStorage.getItem('sp_users') || '[]');
     const now = new Date().toISOString();
-    let updatedUser: User | null = null;
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_profile_enabled: true, updated_at: now })
+      });
 
-    const updated = currentUsers.map(u => {
-      if (u.id === userId) {
-        updatedUser = { ...u, is_profile_enabled: true, updated_at: now };
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setUsers(prev => prev.map(u => u.id === userId ? updatedUser : u));
+
+        const adminLog: AdminActivityLog = {
+          id: `AL-${Date.now()}`,
+          admin_id: adminUser?.id || 'SYSTEM',
+          user_id: userId,
+          action_performed: 'Profile Activated',
+          timestamp: now
+        };
+        fetch('/api/admin-activity-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adminLog)
+        });
+        setAdminActivityLogs(prev => [adminLog, ...prev]);
+
+        if (user?.id === userId) {
+          setUser(updatedUser);
+          localStorage.setItem('sp_session', JSON.stringify(updatedUser));
+        }
         return updatedUser;
       }
-      return u;
-    });
-
-    if (!updatedUser) throw new Error("User not found in registry.");
-
-    localStorage.setItem('sp_users', JSON.stringify(updated));
-    setUsers(updated);
-
-    const currentAdminLogs: AdminActivityLog[] = JSON.parse(localStorage.getItem('sp_admin_activity_logs') || '[]');
-    const newAdminLog: AdminActivityLog = {
-      id: `AL-${Date.now()}`,
-      admin_id: adminUser?.id || 'SYSTEM',
-      user_id: userId,
-      action_performed: 'Profile Activated',
-      timestamp: now
-    };
-    localStorage.setItem('sp_admin_activity_logs', JSON.stringify([newAdminLog, ...currentAdminLogs]));
-    setAdminActivityLogs([newAdminLog, ...currentAdminLogs]);
-
-    if (user?.id === userId) {
-      setUser(updatedUser);
-      localStorage.setItem('sp_session', JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error("Failed to activate user profile:", error);
     }
-
-    return updatedUser;
+    return null;
   };
 
   const enableUserProfile = (id: string) => {
     activateUserProfile(id);
   };
 
-  const updatePolicyStatus = (id: string, status: PolicyStatus, reason?: string) => {
-    const currentPolicies: Policy[] = JSON.parse(localStorage.getItem('sp_policies') || '[]');
-    const updated = currentPolicies.map(p => p.id === id ? { ...p, status, updatedAt: new Date().toISOString() } : p);
-    
-    const currentAdminLogs: AdminActivityLog[] = JSON.parse(localStorage.getItem('sp_admin_activity_logs') || '[]');
-    const prevStatus = currentPolicies.find(p => p.id === id)?.status || 'Unknown' as PolicyStatus;
-    const newAdminLog: AdminActivityLog = {
-      id: `AL-${Date.now()}`,
-      admin_id: adminUser?.id || 'SYSTEM',
-      policy_id: id,
-      action_performed: 'STATUS_CHANGE',
-      previous_status: prevStatus,
-      new_status: status,
-      timestamp: new Date().toISOString()
-    };
-    
-    localStorage.setItem('sp_policies', JSON.stringify(updated));
-    localStorage.setItem('sp_admin_activity_logs', JSON.stringify([newAdminLog, ...currentAdminLogs]));
-    setPolicies(updated);
-    setAdminActivityLogs([newAdminLog, ...currentAdminLogs]);
+  const updatePolicyStatus = async (id: string, status: PolicyStatus, reason?: string) => {
+    try {
+      const response = await fetch(`/api/policies/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (response.ok) {
+        const updatedPolicy = await response.json();
+        const prevStatus = policies.find(p => p.id === id)?.status || 'Unknown' as PolicyStatus;
+        setPolicies(prev => prev.map(p => p.id === id ? updatedPolicy : p));
+
+        const newAdminLog: AdminActivityLog = {
+          id: `AL-${Date.now()}`,
+          admin_id: adminUser?.id || 'SYSTEM',
+          policy_id: id,
+          action_performed: 'STATUS_CHANGE',
+          previous_status: prevStatus,
+          new_status: status,
+          timestamp: new Date().toISOString()
+        };
+        
+        fetch('/api/admin-activity-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newAdminLog)
+        });
+        setAdminActivityLogs(prev => [newAdminLog, ...prev]);
+      }
+    } catch (error) {
+      console.error("Failed to update policy status:", error);
+    }
   };
 
-  const updatePolicyNotes = (id: string, notes: string) => {
-    const currentPolicies: Policy[] = JSON.parse(localStorage.getItem('sp_policies') || '[]');
-    const updated = currentPolicies.map(p => p.id === id ? { ...p, notes, updatedAt: new Date().toISOString() } : p);
-    localStorage.setItem('sp_policies', JSON.stringify(updated));
-    setPolicies(updated);
+  const updatePolicyNotes = async (id: string, notes: string) => {
+    try {
+      const response = await fetch(`/api/policies/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      });
+      if (response.ok) {
+        const updatedPolicy = await response.json();
+        setPolicies(prev => prev.map(p => p.id === id ? updatedPolicy : p));
+      }
+    } catch (error) {
+      console.error("Failed to update policy notes:", error);
+    }
   };
 
-  const removePolicy = (id: string, reason: string) => {
-    const currentPolicies: Policy[] = JSON.parse(localStorage.getItem('sp_policies') || '[]');
-    const now = new Date().toISOString();
-    
-    // Soft delete: update status to 'Deleted' instead of filtering out
-    const updated = currentPolicies.map(p => p.id === id ? { 
-      ...p, 
-      status: 'Deleted' as PolicyStatus, 
-      updatedAt: now 
-    } : p);
-    
-    localStorage.setItem('sp_policies', JSON.stringify(updated));
-    setPolicies(updated);
-    
-    const audit: AuditLog[] = JSON.parse(localStorage.getItem('sp_audit_logs') || '[]');
-    const log: AuditLog = {
-      id: `AUDIT-${Date.now()}`,
-      timestamp: now,
-      userId: adminUser?.id || 'SYSTEM',
-      userEmail: adminUser?.email || 'SYSTEM',
-      targetId: id,
-      action: 'POLICY_REMOVE',
-      details: `Policy soft-deleted. Reason: ${reason}`,
-      ipAddress: '127.0.0.1',
-      entityType: 'POLICY'
-    };
-    localStorage.setItem('sp_audit_logs', JSON.stringify([log, ...audit]));
-    setAuditLogs([log, ...audit]);
+  const removePolicy = async (id: string, reason: string) => {
+    try {
+      const response = await fetch(`/api/policies/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        setPolicies(prev => prev.filter(p => p.id !== id));
+        
+        const now = new Date().toISOString();
+        const log: AuditLog = {
+          id: `AUDIT-${Date.now()}`,
+          timestamp: now,
+          userId: adminUser?.id || 'SYSTEM',
+          userEmail: adminUser?.email || 'SYSTEM',
+          targetId: id,
+          action: 'POLICY_REMOVE',
+          details: `Policy soft-deleted. Reason: ${reason}`,
+          ipAddress: '127.0.0.1',
+          entityType: 'POLICY'
+        };
+        fetch('/api/audit-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(log)
+        });
+        setAuditLogs(prev => [log, ...prev]);
+      }
+    } catch (error) {
+      console.error("Failed to remove policy:", error);
+    }
+  };
+
+  const removeUser = async (id: string, reason: string) => {
+    try {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setUsers(prev => prev.filter(u => u.id !== id));
+
+        // Also remove their policies
+        const userPolicies = policies.filter(p => p.userId === id);
+        for (const p of userPolicies) {
+          await removePolicy(p.id, "User account deletion.");
+        }
+
+        const now = new Date().toISOString();
+        const log: AuditLog = {
+          id: `AUDIT-${Date.now()}`,
+          timestamp: now,
+          userId: adminUser?.id || 'SYSTEM',
+          userEmail: adminUser?.email || 'SYSTEM',
+          targetId: id,
+          action: 'USER_REMOVE',
+          details: `User account and associated policies removed. Reason: ${reason}`,
+          ipAddress: '127.0.0.1',
+          entityType: 'USER'
+        };
+        fetch('/api/audit-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(log)
+        });
+        setAuditLogs(prev => [log, ...prev]);
+
+        const adminLog: AdminActivityLog = {
+          id: `AL-${Date.now()}`,
+          admin_id: adminUser?.id || 'SYSTEM',
+          user_id: id,
+          action_performed: 'USER_REMOVE',
+          timestamp: now
+        };
+        fetch('/api/admin-activity-logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adminLog)
+        });
+        setAdminActivityLogs(prev => [adminLog, ...prev]);
+        
+        if (user?.id === id) logout();
+      }
+    } catch (error) {
+      console.error("Failed to remove user:", error);
+    }
   };
 
   const bindPolicyManual = async (userId: string, policyData: any) => {
@@ -369,10 +514,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedAt: now 
     };
     
-    const currentPolicies = JSON.parse(localStorage.getItem('sp_policies') || '[]');
-    localStorage.setItem('sp_policies', JSON.stringify([newPolicy, ...currentPolicies]));
-    setPolicies([newPolicy, ...currentPolicies]);
-    return true;
+    try {
+      const response = await fetch('/api/policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPolicy)
+      });
+      if (response.ok) {
+        setPolicies(prev => [newPolicy, ...prev]);
+        return newPolicy;
+      }
+    } catch (error) {
+      console.error("Failed to bind policy:", error);
+    }
+    return null;
+  };
+
+  const addToLog = async (data: any, success: boolean, source: 'Authoritative' | 'Intelligence', normalizedVrm: string) => {
+    const newLog: VehicleLookupLog = {
+      id: `LOG-${Date.now()}`,
+      registration: normalizedVrm,
+      make: data.make || 'N/A',
+      model: data.model || 'N/A',
+      year: data.year?.toString() || 'N/A',
+      source,
+      timestamp: new Date().toISOString(),
+      success
+    };
+    
+    try {
+      const response = await fetch('/api/vehicle-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLog)
+      });
+      if (response.ok) {
+        setVehicleLogs(prev => [newLog, ...prev]);
+      }
+    } catch (e) {
+      console.error("Failed to save vehicle log:", e);
+    }
   };
 
   const lookupVehicle = async (vrm: string) => {
@@ -390,26 +571,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'GF15XYL': { make: 'FORD', model: 'FIESTA ZETEC', year: 2015, fuelType: 'Petrol', engineSize: '1242cc', bodyType: 'Hatchback', color: 'Race Red' }
     };
 
-    const addToLog = (data: any, success: boolean, source: 'Authoritative' | 'Intelligence') => {
-      const logs: VehicleLookupLog[] = JSON.parse(localStorage.getItem('sp_vehicle_logs') || '[]');
-      const newLog: VehicleLookupLog = {
-        id: `LOG-${Date.now()}`,
-        registration: normalizedVrm,
-        make: data.make || 'N/A',
-        model: data.model || 'N/A',
-        year: data.year?.toString() || 'N/A',
-        source,
-        timestamp: new Date().toISOString(),
-        success
-      };
-      const updated = [newLog, ...logs];
-      localStorage.setItem('sp_vehicle_logs', JSON.stringify(updated));
-      setVehicleLogs(updated);
-    };
-
     if (authoritativeDataset[normalizedVrm]) {
       const data = authoritativeDataset[normalizedVrm];
-      addToLog(data, true, 'Authoritative');
+      addToLog(data, true, 'Authoritative', normalizedVrm);
       return { success: true, data: { ...data, registration: normalizedVrm } };
     }
 
@@ -440,12 +604,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const data = JSON.parse(response.text || '{}');
       if (data.make && data.model) {
-        addToLog(data, true, 'Intelligence');
+        addToLog(data, true, 'Intelligence', normalizedVrm);
         return { success: true, data: { ...data, registration: normalizedVrm } };
       }
       throw new Error("Missing critical specification fields.");
     } catch (error) {
-      addToLog({}, false, 'Intelligence');
+      addToLog({}, false, 'Intelligence', normalizedVrm);
       return { success: false, error: "Vehicle not found. Please check registration number or enter details manually." };
     }
   };
@@ -481,18 +645,153 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const retryMIDSubmission = async (id: string) => {
-    const subs: MIDSubmission[] = JSON.parse(localStorage.getItem('sp_mid_submissions') || '[]');
-    const updated = subs.map(m => m.id === id ? { ...m, status: 'Success' as any, lastAttemptAt: new Date().toISOString(), retryCount: m.retryCount + 1 } : m);
-    localStorage.setItem('sp_mid_submissions', JSON.stringify(updated));
-    refreshData();
+    const now = new Date().toISOString();
+    try {
+      const sub = midSubmissions.find(m => m.id === id);
+      if (sub) {
+        const updates = { 
+          status: 'Success' as any, 
+          lastAttemptAt: now, 
+          retryCount: sub.retryCount + 1 
+        };
+        const response = await fetch(`/api/mid-submissions/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates)
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setMidSubmissions(prev => prev.map(m => m.id === id ? updated : m));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to retry MID submission:", e);
+    }
   };
 
   const value = {
     user, adminUser, users, adminUsers, policies, claims, payments, midSubmissions, vehicleLogs, auditLogs, adminActivityLogs, tickets, riskConfig, isLoading,
     login, signup, logout, logoutAdmin,
-    updateUserStatus, activateUserProfile, enableUserProfile, updateUserRisk: () => {}, updateUserNotes: () => {}, validateUserIdentity: () => {},
-    updatePolicyStatus, updatePolicyNotes, removePolicy, updatePolicyRenewal: () => {}, createClaim: () => {}, updateClaimStatus: () => {}, confirmPayment: () => {},
-    updateTicketStatus: () => {}, updateRiskConfig: () => {}, bindPolicyManual, lookupVehicle, lookupVIN, runDiagnostics, retryMIDSubmission, refreshData
+    updateUserStatus, activateUserProfile, enableUserProfile, 
+    updateUserRisk: async (id: string, risk: RiskLevel, reason: string) => {
+      try {
+        const response = await fetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ risk_factor: risk, updated_at: new Date().toISOString() })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setUsers(prev => prev.map(u => u.id === id ? updated : u));
+        }
+      } catch (e) {}
+    }, 
+    updateUserNotes: async (id: string, notes: string) => {
+      try {
+        const response = await fetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes, updated_at: new Date().toISOString() })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setUsers(prev => prev.map(u => u.id === id ? updated : u));
+        }
+      } catch (e) {}
+    }, 
+    validateUserIdentity: async (id: string, status: KYCStatus, reason: string) => {
+      try {
+        const response = await fetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kyc_status: status, updated_at: new Date().toISOString() })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setUsers(prev => prev.map(u => u.id === id ? updated : u));
+        }
+      } catch (e) {}
+    },
+    updatePolicyStatus, updatePolicyNotes, removePolicy, removeUser, 
+    updatePolicyRenewal: async (id: string, date: string) => {
+      try {
+        const response = await fetch(`/api/policies/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ renewalDate: date })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setPolicies(prev => prev.map(p => p.id === id ? updated : p));
+        }
+      } catch (e) {}
+    }, 
+    createClaim: async (claim: Partial<ClaimRecord>) => {
+      try {
+        const response = await fetch('/api/claims', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(claim)
+        });
+        if (response.ok) {
+          const newClaim = await response.json();
+          setClaims(prev => [newClaim, ...prev]);
+        }
+      } catch (e) {}
+    }, 
+    updateClaimStatus: async (id: string, status: ClaimStatus, notes: string) => {
+      try {
+        const response = await fetch(`/api/claims/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, notes })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setClaims(prev => prev.map(c => c.id === id ? updated : c));
+        }
+      } catch (e) {}
+    }, 
+    confirmPayment: async (id: string) => {
+      try {
+        const response = await fetch(`/api/policies/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentStatus: 'Paid' })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setPolicies(prev => prev.map(p => p.id === id ? updated : p));
+        }
+      } catch (e) {}
+    },
+    updateTicketStatus: async (id: string, status: SupportTicket['status'], agent?: string) => {
+      try {
+        const response = await fetch(`/api/tickets/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, assignedAgent: agent })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          setTickets(prev => prev.map(t => t.id === id ? updated : t));
+        }
+      } catch (e) {}
+    }, 
+    updateRiskConfig: async (updates: Partial<RiskConfig>) => {
+      const newConfig = { ...riskConfig, ...updates };
+      try {
+        const response = await fetch('/api/risk-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newConfig)
+        });
+        if (response.ok) {
+          setRiskConfig(newConfig);
+        }
+      } catch (e) {}
+    }, 
+    bindPolicyManual, lookupVehicle, lookupVIN, runDiagnostics, retryMIDSubmission, refreshData
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

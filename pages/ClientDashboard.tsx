@@ -4,12 +4,13 @@ import {
   Shield, Clock, Phone, User as UserIcon, RotateCcw, 
   ArrowRight, Eye, Car, X, FileText, Download, Loader2,
   Mail, Globe, MapPin, CheckCircle2, BadgeCheck, Lock,
-  ShieldAlert, Sparkles, AlertCircle, UserCheck, CalendarDays
+  ShieldAlert, Sparkles, AlertCircle, UserCheck, CalendarDays, FileCheck
 } from 'lucide-react';
 import { Navigate, Link } from 'react-router-dom';
 import { Policy, User } from '../types';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { OfficialCertificateModal } from '../services/PolicyDocumentEngine/OfficialCertificateModal';
 
 const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: User, onClose: () => void }) => {
   const [isDownloading, setIsDownloading] = useState(false);
@@ -31,16 +32,20 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
             el.style.display = 'block';
             el.style.visibility = 'visible';
             el.style.backgroundColor = '#ffffff';
-            // Force all text to be black for better contrast in PDF
-            const textElements = el.querySelectorAll('*');
-            textElements.forEach((node: any) => {
+            
+            // Recursively remove oklch colors from all elements in the cloned document
+            const allElements = el.querySelectorAll('*');
+            allElements.forEach((node: any) => {
               if (node.style) {
-                // Only override if it's not already a specific color we want to keep (like pink)
-                const computedColor = window.getComputedStyle(node).color;
-                if (computedColor === 'rgb(255, 255, 255)' || computedColor === 'rgba(255, 255, 255, 1)') {
-                   // Keep white text on dark backgrounds (like the payment summary)
-                } else {
-                   // node.style.color = '#000000'; // Optional: force black text
+                const style = window.getComputedStyle(node);
+                if (style.backgroundColor.includes('oklch')) {
+                  node.style.backgroundColor = '#ffffff';
+                }
+                if (style.color.includes('oklch')) {
+                  node.style.color = '#000000';
+                }
+                if (style.borderColor.includes('oklch')) {
+                  node.style.borderColor = '#e5e7eb';
                 }
               }
             });
@@ -62,7 +67,7 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
 
       // Add subsequent pages if content is longer than one A4 page
       while (heightLeft > 0) {
-        position = heightLeft - pdfHeight; // Fix: shift by pdfHeight, not imgHeight
+        position -= pdfHeight;
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
         heightLeft -= pdfHeight;
@@ -84,9 +89,9 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
   const isOneMonth = policy.policy_type === 'ONE_MONTH';
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-[#2d1f2d]/80 backdrop-blur-md" onClick={onClose} />
-      <div className="relative w-full max-w-5xl bg-white h-full md:rounded-[40px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+      <div className="relative w-full max-w-full sm:max-w-[95vw] bg-white h-full sm:h-auto sm:max-h-[95vh] sm:rounded-[40px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
         <div className="p-4 md:p-8 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-white shrink-0 gap-4">
           <div className="flex items-center gap-4 w-full sm:w-auto">
              <div className="w-10 h-10 md:w-12 md:h-12 bg-[#e91e8c]/10 rounded-2xl flex items-center justify-center text-[#e91e8c]"><FileText size={20}/></div>
@@ -100,9 +105,9 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 md:p-12 bg-gray-100 flex justify-center">
+        <div className="flex-1 overflow-y-auto overflow-x-auto p-4 md:p-12 bg-gray-100 flex justify-center">
            {/* PROFESSIONAL POLICY DOCUMENT LAYOUT */}
-           <div ref={documentRef} id="policy-document-container" className="w-full max-w-[210mm] bg-white p-6 md:p-16 shadow-xl text-[#2d1f2d] font-sans relative">
+           <div ref={documentRef} id="policy-document-container" className="w-full max-w-full sm:max-w-[210mm] bg-white p-4 sm:p-6 md:p-16 shadow-xl text-[#2d1f2d] font-sans relative overflow-x-hidden">
               <style dangerouslySetInnerHTML={{ __html: `
                 @media print {
                   .policy-section { page-break-inside: auto; }
@@ -110,37 +115,74 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
                   .page-break { page-break-after: always; }
                 }
                 #policy-document {
-                  padding-top: 20mm;
-                  padding-bottom: 20mm;
+                  padding-top: 10mm;
+                  padding-bottom: 10mm;
                   background-color: #ffffff;
                 }
+                @media (min-width: 640px) {
+                  #policy-document {
+                    padding-top: 20mm;
+                    padding-bottom: 20mm;
+                  }
+                }
+                /* Fix for html2canvas oklch error */
+                #policy-document *, #policy-document-container * {
+                  --tw-text-opacity: 1 !important;
+                  --tw-bg-opacity: 1 !important;
+                  --tw-border-opacity: 1 !important;
+                }
+                .text-gray-400 { color: #9ca3af !important; }
+                .text-gray-300 { color: #d1d5db !important; }
+                .text-gray-500 { color: #6b7280 !important; }
+                .text-green-600 { color: #16a34a !important; }
+                .text-orange-600 { color: #ea580c !important; }
+                .border-gray-100 { border-color: #f3f4f6 !important; }
+                .bg-gray-50 { background-color: #f9fafb !important; }
+                .bg-gray-100 { background-color: #f3f4f6 !important; }
+                .bg-pink-50 { background-color: #fdf2f8 !important; }
+                .text-blue-600 { color: #2563eb !important; }
+                .bg-blue-50 { background-color: #eff6ff !important; }
+                .text-red-600 { color: #dc2626 !important; }
+                .bg-red-50 { background-color: #fef2f2 !important; }
               `}} />
-              <div id="policy-document">
+              <div id="policy-document" className="w-full">
                 {/* HEADER SECTION */}
-                <div className="flex flex-col sm:flex-row justify-between items-start mb-12 border-b-2 border-gray-100 pb-10 gap-8 policy-section">
-                 <div className="w-full sm:w-auto">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="bg-[#e91e8c] p-1.5 rounded-lg"><Shield className="text-white" size={24}/></div>
-                      <span className="text-2xl font-black font-outfit tracking-tighter">SwiftPolicy</span>
+                <div className="flex flex-col sm:flex-row justify-between items-start mb-8 sm:mb-12 border-b-2 border-gray-100 pb-8 sm:pb-10 gap-6 sm:gap-8 policy-section">
+                  <div className="w-full sm:w-auto">
+                    <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                      <div className="bg-[#e91e8c] p-1.5 rounded-lg"><Shield className="text-white" size={20}/></div>
+                      <span className="text-xl sm:text-2xl font-black font-outfit tracking-tighter">SwiftPolicy</span>
                     </div>
-                    <div className="text-[10px] font-bold text-gray-400 space-y-1">
+                    <div className="text-[9px] sm:text-[10px] font-bold text-gray-400 space-y-1">
                        <p>Crown House, 27 Old Gloucester Street</p>
                        <p>London, WC1N 3AX, United Kingdom</p>
                        <p>Contact: 0203 137 1752 | info@swiftpolicy.co.uk</p>
                        <p>Website: www.swiftpolicy.co.uk</p>
                        <p className="text-[#e91e8c] font-black">FCA Firm Reference: 481413</p>
                     </div>
-                 </div>
-                 <div className="text-left sm:text-right w-full sm:w-auto">
-                    <h1 className="text-xl font-black uppercase text-[#2d1f2d] tracking-widest mb-1">CERTIFICATE OF MOTOR INSURANCE</h1>
-                    <div className="space-y-1 mt-6">
+                  </div>
+                  <div className="text-left sm:text-right w-full sm:w-auto">
+                    <div className="flex flex-col items-start sm:items-end mb-4 sm:mb-6">
+                       <div className="flex items-center gap-2 mb-1">
+                         <div className="bg-[#e91e8c] p-1 rounded-md">
+                           <Shield className="text-white" size={14} />
+                         </div>
+                         <span className="text-base sm:text-lg font-black font-outfit tracking-tighter">SwiftPolicy</span>
+                       </div>
+                       <p className="text-[9px] sm:text-[10px] font-black text-[#e91e8c] uppercase tracking-widest">swiftpolicy.co.uk</p>
+                    </div>
+                    <h1 className="text-lg sm:text-xl font-black uppercase text-[#2d1f2d] tracking-widest mb-1">CERTIFICATE OF MOTOR INSURANCE</h1>
+                    <div className="space-y-1 mt-4 sm:mt-6">
                        <div className="flex flex-col">
                           <span className="text-[8px] font-black text-gray-300 uppercase">Policy Reference Number</span>
-                          <span className="text-xl font-mono font-black text-[#e91e8c]">{policy.displayId || policy.id}</span>
+                          <div className="flex items-center gap-2 justify-start sm:justify-end">
+                            <span className="text-lg sm:text-xl font-mono font-black text-[#e91e8c]">{policy.displayId || policy.id}</span>
+                            <span className="text-gray-300 font-mono text-[10px] sm:text-xs">CW113</span>
+                          </div>
                        </div>
                        <div className="flex flex-col mt-2">
                           <span className="text-[8px] font-black text-gray-300 uppercase">Issue Date</span>
-                          <span className="text-xs font-bold">{new Date(policy.createdAt).toLocaleDateString('en-GB')}</span>
+                          <span className="text-[10px] sm:text-xs font-bold">{new Date(policy.createdAt).toLocaleDateString('en-GB')}</span>
                        </div>
                     </div>
                  </div>
@@ -150,22 +192,33 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 mb-12 policy-section">
                  {/* Policyholder Details */}
                  <div className="space-y-6">
-                    <div className="border-l-4 border-[#e91e8c] pl-6 py-1">
-                       <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Policyholder Details</h3>
-                       <div className="space-y-3">
-                          <p className="text-lg font-black tracking-tight leading-none">{user.name}</p>
-                          <div className="text-xs font-bold text-gray-500 space-y-1">
-                             <p className="flex items-center gap-2">
-                               <MapPin size={12}/> 
-                               {[
-                                 policy.details.addressLine1 || policy.details.address,
-                                 policy.details.addressLine2,
-                                 policy.details.city,
-                                 (policy.details as any).state || policy.details.county,
-                                 policy.details.postcode,
-                                 (policy.details as any).country
-                               ].filter(Boolean).join(', ')}
-                             </p>
+                    <div className="border-l-4 border-[#e91e8c] pl-4 sm:pl-6 py-1">
+                       <h3 className="text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3 sm:mb-4">Policyholder Details</h3>
+                       <div className="space-y-2 sm:space-y-3">
+                          <p className="text-base sm:text-lg font-black tracking-tight leading-none">
+                            {(() => {
+                              const prefixes = ['MR ', 'MRS ', 'MS ', 'MISS ', 'DR ', 'PROF '];
+                              const upperName = user.name.toUpperCase();
+                              if (prefixes.some(p => upperName.startsWith(p))) return user.name;
+                              return `MR ${user.name}`;
+                            })()}
+                          </p>
+                          <div className="text-[10px] sm:text-xs font-bold text-gray-500 space-y-1">
+                             <div className="flex items-start gap-2">
+                               <MapPin size={10} className="mt-0.5 shrink-0"/> 
+                               <div className="flex flex-col">
+                                 {[
+                                   policy.details.addressLine1 || policy.details.address,
+                                   policy.details.addressLine2,
+                                   policy.details.city,
+                                   (policy.details as any).state || policy.details.county,
+                                   policy.details.postcode,
+                                   (policy.details as any).country
+                                 ].filter(Boolean).map((line, i) => (
+                                   <span key={i}>{line}</span>
+                                 ))}
+                               </div>
+                             </div>
                              <p className="flex items-center gap-2"><Mail size={12}/> {user.email}</p>
                              <p className="flex items-center gap-2"><Phone size={12}/> {user.phone || '07XXX XXXXXX'}</p>
                           </div>
@@ -173,24 +226,24 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
                     </div>
 
                     {/* Policy Coverage */}
-                    <div className="border-l-4 border-[#2d1f2d] pl-6 py-1">
-                       <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Policy Coverage</h3>
-                       <div className="space-y-3">
+                    <div className="border-l-4 border-[#2d1f2d] pl-4 sm:pl-6 py-1">
+                       <h3 className="text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-widest mb-3 sm:mb-4">Policy Coverage</h3>
+                       <div className="space-y-2 sm:space-y-3">
                           <div className="flex justify-between items-center border-b border-gray-50 pb-2">
-                             <span className="text-xs font-bold text-gray-400">Level of Cover</span>
-                             <span className="text-xs font-black uppercase">{policy.details.coverLevel}</span>
+                             <span className="text-[10px] sm:text-xs font-bold text-gray-400">Level of Cover</span>
+                             <span className="text-[10px] sm:text-xs font-black uppercase">{policy.details.coverLevel}</span>
                           </div>
                           <div className="flex justify-between items-center border-b border-gray-50 pb-2">
-                             <span className="text-xs font-bold text-gray-400">Effective From</span>
-                             <span className="text-xs font-black">{new Date(policy.details.startDate || policy.createdAt).toLocaleDateString('en-GB')}</span>
+                             <span className="text-[10px] sm:text-xs font-bold text-gray-400">Effective From</span>
+                             <span className="text-[10px] sm:text-xs font-black">{new Date(policy.details.startDate || policy.createdAt).toLocaleDateString('en-GB')}</span>
                           </div>
                           <div className="flex justify-between items-center border-b border-gray-50 pb-2">
-                             <span className="text-xs font-bold text-gray-400">Expiry Date</span>
-                             <span className="text-xs font-black">{new Date(policy.details.expiryDate || policy.renewalDate || '').toLocaleDateString('en-GB')}</span>
+                             <span className="text-[10px] sm:text-xs font-bold text-gray-400">Expiry Date</span>
+                             <span className="text-[10px] sm:text-xs font-black">{new Date(policy.details.expiryDate || policy.renewalDate || '').toLocaleDateString('en-GB')}</span>
                           </div>
                           <div className="flex justify-between items-center border-b border-gray-50 pb-2">
-                             <span className="text-xs font-bold text-gray-400">Policy Excess</span>
-                             <span className="text-xs font-black">{policy.details.excess || '£250.00'}</span>
+                             <span className="text-[10px] sm:text-xs font-bold text-gray-400">Policy Excess</span>
+                             <span className="text-[10px] sm:text-xs font-black">{policy.details.excess || '£250.00'}</span>
                           </div>
                        </div>
                     </div>
@@ -198,42 +251,42 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
 
                  {/* Vehicle Details */}
                  <div className="space-y-6">
-                    <div className="bg-gray-50 p-6 md:p-8 rounded-[32px] border border-gray-100 relative overflow-hidden">
-                       <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-6 flex items-center gap-2"><Car size={14}/> Vehicle Specification</h3>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative z-10">
+                    <div className="bg-gray-50 p-4 sm:p-6 md:p-8 rounded-[24px] sm:rounded-[32px] border border-gray-100 relative overflow-hidden">
+                       <h3 className="text-[9px] sm:text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4 sm:mb-6 flex items-center gap-2"><Car size={12}/> Vehicle Specification</h3>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 relative z-10">
                           <div className="sm:col-span-2">
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Registration</p>
-                             <p className="text-xl md:text-2xl font-black font-mono tracking-widest border-2 border-gray-100 bg-white inline-block px-4 py-1 rounded-xl text-[#2d1f2d]">{policy.details.vrm}</p>
+                             <p className="text-lg sm:text-xl md:text-2xl font-black font-mono tracking-widest border-2 border-gray-100 bg-white inline-block px-3 sm:px-4 py-1 rounded-lg sm:rounded-xl text-[#2d1f2d]">{policy.details.vrm}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Make</p>
-                             <p className="text-xs font-bold">{policy.details.make}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{policy.details.make}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Model</p>
-                             <p className="text-xs font-bold">{policy.details.model}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{policy.details.model}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Year</p>
-                             <p className="text-xs font-bold">{policy.details.year}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{policy.details.year}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Fuel Type</p>
-                             <p className="text-xs font-bold">{(policy.details as any).fuel_type || 'Petrol'}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{(policy.details as any).fuel_type || 'Petrol'}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Engine Size</p>
-                             <p className="text-xs font-bold">{policy.details.engine_size || policy.details.engineCC || 'N/A'}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{policy.details.engine_size || policy.details.engineCC || 'N/A'}</p>
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-gray-300 uppercase mb-1">Colour</p>
-                             <p className="text-xs font-bold">{policy.details.color || policy.details.colour || 'N/A'}</p>
+                             <p className="text-[10px] sm:text-xs font-bold">{policy.details.color || policy.details.colour || 'N/A'}</p>
                           </div>
                        </div>
                     </div>
 
-                    <div className="bg-[#e91e8c]/5 p-6 rounded-[24px] border border-[#e91e8c]/10">
-                       <h3 className="text-[10px] font-black uppercase text-[#e91e8c] tracking-widest mb-3">Optional Add-ons</h3>
+                    <div className="bg-[#e91e8c]/5 p-4 sm:p-6 rounded-[20px] sm:rounded-[24px] border border-[#e91e8c]/10">
+                       <h3 className="text-[9px] sm:text-[10px] font-black uppercase text-[#e91e8c] tracking-widest mb-3">Optional Add-ons</h3>
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {policy.details.addons?.breakdown && <div className="flex items-center gap-2 text-[9px] font-bold text-gray-600"><CheckCircle2 size={10} className="text-green-500"/> Breakdown Assist</div>}
                           {policy.details.addons?.legal && <div className="flex items-center gap-2 text-[9px] font-bold text-gray-600"><CheckCircle2 size={10} className="text-green-500"/> Motor Legal Exp.</div>}
@@ -245,19 +298,19 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
               </div>
 
               {/* PAYMENT SUMMARY SECTION */}
-              <div className="bg-[#2d1f2d] p-6 md:p-10 rounded-[32px] md:rounded-[48px] text-white relative overflow-hidden mb-12 policy-section">
-                 <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
+              <div className="bg-[#2d1f2d] p-6 sm:p-8 md:p-10 rounded-[24px] sm:rounded-[32px] md:rounded-[48px] text-white relative overflow-hidden mb-8 sm:mb-12 policy-section">
+                 <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 sm:gap-8">
                     <div className="space-y-4 w-full lg:w-auto">
                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-[#e91e8c] shadow-lg"><BadgeCheck size={24}/></div>
-                          <h3 className="text-lg md:text-xl font-black font-outfit uppercase tracking-widest">Premium Settlement</h3>
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 rounded-lg sm:rounded-xl flex items-center justify-center text-[#e91e8c] shadow-lg"><BadgeCheck size={20} className="sm:w-6 sm:h-6"/></div>
+                          <h3 className="text-base sm:text-lg md:text-xl font-black font-outfit uppercase tracking-widest">Premium Settlement</h3>
                        </div>
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4 pt-2">
                           <div>
                              <p className="text-[8px] font-black text-white/30 uppercase tracking-widest">Payment Source</p>
-                             <p className="text-xs font-bold text-white/60">Card ending in {policy.details.cardLastFour || 'XXXX'}</p>
+                             <p className="text-[10px] sm:text-xs font-bold text-white/60">Card ending in {policy.details.cardLastFour || 'XXXX'}</p>
                              {policy.details.cardExpiry && (
-                               <p className="text-[10px] font-bold text-white/40 mt-0.5">Expiry Date: {policy.details.cardExpiry}</p>
+                               <p className="text-[9px] sm:text-[10px] font-bold text-white/40 mt-0.5">Expiry Date: {policy.details.cardExpiry}</p>
                              )}
                              {isPaid && (
                                <p className="text-[9px] font-black text-green-400 uppercase tracking-widest mt-1">Payment Settled</p>
@@ -265,38 +318,40 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
                           </div>
                           <div>
                              <p className="text-[8px] font-black text-white/30 uppercase tracking-widest">Billing Plan</p>
-                             <p className="text-xs font-bold text-white/60">
+                             <p className="text-[10px] sm:text-xs font-bold text-white/60">
                                {isOneMonth ? '1 Month – Single Payment' : isMonthly ? '12 Monthly Installments' : 'Annual Upfront'}
                              </p>
                           </div>
                           {isMonthly && (
                              <div>
                                 <p className="text-[8px] font-black text-[#e91e8c] uppercase tracking-widest">Monthly Installment</p>
-                                <p className="text-sm font-black">£{monthlyAmount?.toFixed(2)}</p>
+                                <p className="text-xs sm:text-sm font-black">£{monthlyAmount?.toFixed(2)}</p>
                              </div>
                           )}
                        </div>
                     </div>
-                    <div className="text-left lg:text-right border-t lg:border-t-0 lg:border-l border-white/10 pt-8 lg:pt-0 lg:pl-8 w-full lg:w-auto">
-                       <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">TOTAL POLICY COST ({isOneMonth ? '30 DAYS' : 'ANNUAL'})</p>
-                       <p className="text-4xl md:text-5xl font-black font-outfit tracking-tighter text-white">£{totalCost.toFixed(2)}</p>
+                    <div className="text-left lg:text-right border-t lg:border-t-0 lg:border-l border-white/10 pt-6 sm:pt-8 lg:pt-0 lg:pl-8 w-full lg:w-auto">
+                       <p className="text-[9px] sm:text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">TOTAL POLICY COST ({isOneMonth ? '30 DAYS' : 'ANNUAL'})</p>
+                       <p className="text-3xl sm:text-4xl md:text-5xl font-black font-outfit tracking-tighter text-white">£{totalCost.toFixed(2)}</p>
                        <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest mt-2 flex items-center justify-start lg:justify-end gap-1"><Shield size={8}/> Prices inclusive of IPT & Fees</p>
                     </div>
                  </div>
-                 <div className="absolute top-0 right-0 w-64 h-64 bg-[#e91e8c]/10 rounded-full blur-[100px] pointer-events-none" />
+                 <div className="absolute top-0 right-0 w-48 h-48 sm:w-64 sm:h-64 bg-[#e91e8c]/10 rounded-full blur-[80px] sm:blur-[100px] pointer-events-none" />
               </div>
 
               {/* FOOTER SECTION */}
-              <div className="border-t border-gray-100 pt-10 flex flex-col items-center text-center gap-6 policy-section">
-                 <div className="flex flex-col items-center gap-4 mb-4">
-                    <div className="w-32 h-12 border-b border-gray-300 flex items-end justify-center pb-1">
-                       <span className="font-serif italic text-gray-400 text-sm">SwiftPolicy Digital</span>
+              <div className="border-t border-gray-100 pt-8 sm:pt-10 flex flex-col items-center text-center gap-4 sm:gap-6 policy-section">
+                 <div className="flex flex-col items-center gap-3 sm:gap-4 mb-2 sm:mb-4">
+                    <div className="flex flex-col items-center">
+                       <div className="italic font-serif text-xl sm:text-2xl text-[#2d1f2d] opacity-80 mb-1" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Ben Kedby</div>
+                       <div className="w-24 sm:w-32 h-px bg-gray-300 mb-2"></div>
+                       <span className="font-black text-[#2d1f2d] text-[9px] sm:text-[10px] uppercase tracking-widest">BEN KEDBY</span>
                     </div>
                     <p className="text-[8px] font-black uppercase tracking-widest text-gray-300">Authorised Signatory</p>
                  </div>
                  <div className="text-[9px] text-gray-400 leading-relaxed max-w-2xl space-y-2">
-                    <p className="font-bold">SwiftPolicy Insurance Services is a brand of Autoline Direct Insurance Consultants Ltd.</p>
-                    <p>Autoline Direct Insurance Consultants Ltd is authorised and regulated by the Financial Conduct Authority (FCA), firm reference number 481413. Registered Office: Crown House, 27 Old Gloucester Street, London WC1N 3AX.</p>
+                    <p className="font-bold">SwiftPolicy Insurance Services is child company of AUTOLINE DIRECT INSURANCE CONSULTANTS LIMITED, authorised by the Prudential Regulation Authority and regulated by the Financial Conduct Authority and the Prudential Regulation Authority. Firm Reference Number: 481413.</p>
+                    <p>Registered in England No NI020828. Registered Office: Crown House, 27 Old Gloucester Street, London WC1N 3AX, UK. Telephone: 0203 137 1752.</p>
                     <p>This document is evidence of your insurance contract and serves as your Certificate of Motor Insurance. Please keep it in a safe place. You can manage your policy 24/7 at www.swiftpolicy.co.uk.</p>
                  </div>
               </div>
@@ -311,6 +366,7 @@ const PolicyDocumentModal = ({ policy, user, onClose }: { policy: Policy, user: 
 const ClientDashboard: React.FC = () => {
   const { user, policies, logout } = useAuth();
   const [viewingPolicy, setViewingPolicy] = useState<Policy | null>(null);
+  const [viewingOfficialCertificate, setViewingOfficialCertificate] = useState<Policy | null>(null);
 
   // Strictly enforce role separation
   if (!user) return <Navigate to="/auth" replace />;
@@ -353,32 +409,32 @@ const ClientDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf8fa] py-20 font-inter text-[#2d1f2d]">
+    <div className="min-h-screen bg-[#faf8fa] py-12 sm:py-20 font-inter text-[#2d1f2d]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Full Access Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-16 animate-in fade-in slide-in-from-top-4 duration-700">
-          <div className="flex items-center gap-6">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl text-white bg-[#e91e8c]">
-               <UserCheck size={32} />
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 sm:gap-8 mb-10 sm:mb-16 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-xl text-white bg-[#e91e8c]">
+               <UserCheck size={24} className="sm:w-8 sm:h-8" />
             </div>
             <div>
-               <h1 className="text-4xl font-bold font-outfit tracking-tighter leading-none mb-2">My Policy Hub</h1>
-               <p className="text-gray-400 text-xs font-black uppercase tracking-widest">
+               <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold font-outfit tracking-tighter leading-none mb-1 sm:mb-2">My Policy Hub</h1>
+               <p className="text-gray-400 text-[10px] sm:text-xs font-black uppercase tracking-widest">
                   Welcome back, {user.name} • <span className="text-green-500">Secure Portal Access</span>
                </p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-             <Link to="/quote" className="bg-[#e91e8c] hover:bg-[#c4167a] text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all shadow-xl shadow-pink-900/20">New Quote</Link>
-             <button onClick={logout} className="p-4 bg-white border border-gray-100 rounded-2xl text-gray-400 hover:text-[#e91e8c] transition-all"><RotateCcw size={20}/></button>
+          <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+             <Link to="/quote" className="flex-1 sm:flex-none text-center bg-[#e91e8c] hover:bg-[#c4167a] text-white px-6 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all shadow-xl shadow-pink-900/20">New Quote</Link>
+             <button onClick={logout} className="p-3 sm:p-4 bg-white border border-gray-100 rounded-xl sm:rounded-2xl text-gray-400 hover:text-[#e91e8c] transition-all"><RotateCcw size={18} className="sm:w-5 sm:h-5"/></button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-8">
-            <div className="bg-white rounded-[48px] p-10 md:p-16 border border-gray-100 shadow-2xl animate-in fade-in duration-700">
-               <h2 className="text-2xl font-black font-outfit uppercase tracking-tighter mb-10 flex items-center gap-3"><Shield size={24} className="text-[#e91e8c]"/> Active Protection</h2>
+          <div className="lg:col-span-2 space-y-6 sm:space-y-8">
+            <div className="bg-white rounded-[32px] sm:rounded-[48px] p-6 sm:p-10 md:p-16 border border-gray-100 shadow-2xl animate-in fade-in duration-700">
+               <h2 className="text-xl sm:text-2xl font-black font-outfit uppercase tracking-tighter mb-6 sm:mb-10 flex items-center gap-3"><Shield size={20} className="sm:w-6 sm:h-6 text-[#e91e8c]"/> Active Protection</h2>
                {myPolicies.length === 0 ? (
                  <div className="py-20 text-center space-y-6">
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto text-gray-200"><Shield size={40}/></div>
@@ -391,38 +447,41 @@ const ClientDashboard: React.FC = () => {
                       const isOneMonth = p.policy_type === 'ONE_MONTH';
                       const isPaid = p.paymentStatus === 'Paid' || p.status === 'Active';
                       return (
-                        <div key={p.id} className="p-8 bg-gray-50 border border-gray-100 rounded-[32px] hover:bg-white hover:border-[#e91e8c] transition-all group">
-                           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
-                              <div className="flex items-center gap-6">
-                                 <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-[#e91e8c] shadow-md transition-transform group-hover:scale-110">
-                                   {isOneMonth ? <CalendarDays size={32} /> : <Car size={32}/>}
+                        <div key={p.id} className="p-5 sm:p-8 bg-gray-50 border border-gray-100 rounded-[24px] sm:rounded-[32px] hover:bg-white hover:border-[#e91e8c] transition-all group">
+                           <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-8">
+                              <div className="flex items-center gap-4 sm:gap-6 w-full">
+                                 <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center text-[#e91e8c] shadow-md transition-transform group-hover:scale-110 shrink-0">
+                                   {isOneMonth ? <CalendarDays size={24} className="sm:w-8 sm:h-8" /> : <Car size={24} className="sm:w-8 sm:h-8"/>}
                                  </div>
-                                 <div>
+                                 <div className="min-w-0">
                                    <div className="flex items-center gap-2 mb-1">
-                                      <p className="text-2xl font-black font-outfit uppercase tracking-tighter leading-none">{p.details.vrm}</p>
-                                      {isOneMonth && <span className="px-2 py-0.5 bg-[#e91e8c] text-white rounded text-[8px] font-black uppercase tracking-widest">1 Month</span>}
+                                      <p className="text-xl sm:text-2xl font-black font-outfit uppercase tracking-tighter leading-none truncate">{p.details.vrm}</p>
+                                      {isOneMonth && <span className="px-2 py-0.5 bg-[#e91e8c] text-white rounded text-[7px] sm:text-[8px] font-black uppercase tracking-widest">1 Month</span>}
                                    </div>
-                                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                                   <p className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 truncate">
                                      {p.displayId || p.id} • {p.details.make} • {isOneMonth ? '30 Days Term' : 'Annual Plan'}
                                    </p>
                                    {isPaid && p.details.cardLastFour && (
                                      <div className="space-y-0.5">
-                                       <p className="text-[9px] font-bold text-[#e91e8c]/60 uppercase tracking-widest">
+                                       <p className="text-[8px] sm:text-[9px] font-bold text-[#e91e8c]/60 uppercase tracking-widest truncate">
                                          Card ending in {p.details.cardLastFour} {p.details.cardExpiry && `• Exp: ${p.details.cardExpiry}`} • <span className="text-green-600">Payment Settled</span>
                                        </p>
                                      </div>
                                    )}
                                  </div>
                               </div>
-                              <div className="flex items-center gap-4">
+                              <div className="flex items-center justify-between md:justify-end gap-3 sm:gap-4 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0">
                                  {isOneMonth && (
-                                   <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-gray-100 shadow-sm">
-                                      <Clock size={12} className="text-[#e91e8c]" />
-                                      <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest">{getCountdown(p.details.expiryDate || '')}</span>
+                                   <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl border border-gray-100 shadow-sm">
+                                      <Clock size={10} className="sm:w-3 sm:h-3 text-[#e91e8c]" />
+                                      <span className="text-[8px] sm:text-[9px] font-black uppercase text-gray-400 tracking-widest">{getCountdown(p.details.expiryDate || '')}</span>
                                    </div>
                                  )}
-                                 <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${p.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>{p.status}</span>
-                                 <button onClick={() => setViewingPolicy(p)} className="p-4 bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-[#e91e8c] transition-all"><Eye size={20}/></button>
+                                 <div className="flex items-center gap-2">
+                                    <span className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${p.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>{p.status}</span>
+                                    <button onClick={() => setViewingPolicy(p)} className="p-3 sm:p-4 bg-white border border-gray-100 rounded-lg sm:rounded-xl text-gray-400 hover:text-[#e91e8c] transition-all" title="View Schedule"><Eye size={18} className="sm:w-5 sm:h-5"/></button>
+                                    <button onClick={() => setViewingOfficialCertificate(p)} className="p-3 sm:p-4 bg-white border border-gray-100 rounded-lg sm:rounded-xl text-gray-400 hover:text-green-600 transition-all" title="Official Certificate"><FileCheck size={18} className="sm:w-5 sm:h-5"/></button>
+                                 </div>
                               </div>
                            </div>
                         </div>
@@ -432,37 +491,38 @@ const ClientDashboard: React.FC = () => {
                )}
             </div>
 
-            <div className="bg-[#2d1f2d] rounded-[48px] p-10 md:p-16 text-white shadow-2xl relative overflow-hidden">
+            <div className="bg-[#2d1f2d] rounded-[32px] sm:rounded-[48px] p-8 sm:p-10 md:p-16 text-white shadow-2xl relative overflow-hidden">
                <div className="relative z-10">
-                  <h3 className="text-xs font-black uppercase tracking-[0.4em] text-[#e91e8c] mb-6">Direct Claims Support</h3>
-                  <p className="text-white/50 text-lg leading-relaxed mb-10 max-w-md">Dedicated claims assistance available 24/7. Immediate notification ensures rapid settlement.</p>
-                  <Link to="/contact" className="px-10 py-5 bg-white text-[#2d1f2d] rounded-2xl font-black uppercase tracking-widest textxs hover:bg-gray-100 transition-all inline-flex items-center gap-3">Incident Report <ArrowRight size={16}/></Link>
+                  <h3 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.4em] text-[#e91e8c] mb-4 sm:mb-6">Direct Claims Support</h3>
+                  <p className="text-white/50 text-base sm:text-lg leading-relaxed mb-8 sm:mb-10 max-w-md">Dedicated claims assistance available 24/7. Immediate notification ensures rapid settlement.</p>
+                  <Link to="/contact" className="px-8 sm:px-10 py-4 sm:py-5 bg-white text-[#2d1f2d] rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs hover:bg-gray-100 transition-all inline-flex items-center gap-3">Incident Report <ArrowRight size={16}/></Link>
                </div>
                <div className="absolute top-0 right-0 w-64 h-64 bg-[#e91e8c]/10 rounded-full blur-3xl pointer-events-none" />
             </div>
           </div>
 
-          <div className="space-y-8 animate-in slide-in-from-right-4 duration-700">
-             <div className="bg-white p-10 rounded-[48px] border border-gray-100 shadow-xl space-y-8">
-                <h3 className="text-sm font-black uppercase tracking-widest border-b border-gray-50 pb-4 flex items-center gap-3"><Clock size={16} className="text-[#e91e8c]"/> Profile Overview</h3>
-                <div className="space-y-6">
-                   <div className="flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Client Code</span><span className="text-xs font-bold font-mono">{user.client_code}</span></div>
-                   <div className="flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Identity Gate</span><span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase bg-green-50 text-green-700">Active</span></div>
-                   <div className="flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Risk Tier</span><span className="text-xs font-bold capitalize">{user.risk_factor || 'Low'}</span></div>
+          <div className="space-y-6 sm:space-y-8 animate-in slide-in-from-right-4 duration-700">
+             <div className="bg-white p-6 sm:p-8 md:p-10 rounded-[24px] sm:rounded-[32px] md:rounded-[48px] border border-gray-100 shadow-xl space-y-6 sm:space-y-8">
+                <h3 className="text-[10px] sm:text-xs md:text-sm font-black uppercase tracking-widest border-b border-gray-50 pb-4 flex items-center gap-3"><Clock size={14} className="sm:w-4 sm:h-4 text-[#e91e8c]"/> Profile Overview</h3>
+                <div className="space-y-4 sm:space-y-6">
+                   <div className="flex justify-between items-center"><span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">Client Code</span><span className="text-[10px] sm:text-xs font-bold font-mono">{user.client_code}</span></div>
+                   <div className="flex justify-between items-center"><span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">Identity Gate</span><span className="px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg text-[8px] sm:text-[9px] font-black uppercase bg-green-50 text-green-700">Active</span></div>
+                   <div className="flex justify-between items-center"><span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">Risk Tier</span><span className="text-[10px] sm:text-xs font-bold capitalize">{user.risk_factor || 'Low'}</span></div>
                 </div>
              </div>
 
-             <div className="bg-white p-10 rounded-[48px] border border-gray-100 shadow-xl space-y-8">
-                <h3 className="text-sm font-black uppercase tracking-widest border-b border-gray-50 pb-4 flex items-center gap-3"><Phone size={16} className="text-[#e91e8c]"/> UK Support Hub</h3>
-                <div className="space-y-4">
-                   <p className="text-xs text-gray-400 leading-relaxed">Direct line for policy amendments and general inquiries.</p>
-                   <p className="text-xl font-bold text-[#2d1f2d]">0203 137 1752</p>
+             <div className="bg-white p-6 sm:p-8 md:p-10 rounded-[24px] sm:rounded-[32px] md:rounded-[48px] border border-gray-100 shadow-xl space-y-6 sm:space-y-8">
+                <h3 className="text-[10px] sm:text-xs md:text-sm font-black uppercase tracking-widest border-b border-gray-50 pb-4 flex items-center gap-3"><Phone size={14} className="sm:w-4 sm:h-4 text-[#e91e8c]"/> UK Support Hub</h3>
+                <div className="space-y-3 sm:space-y-4">
+                   <p className="text-[9px] sm:text-[10px] md:text-xs text-gray-400 leading-relaxed">Direct line for policy amendments and general inquiries.</p>
+                   <p className="text-base sm:text-lg md:text-xl font-bold text-[#2d1f2d]">0203 137 1752</p>
                 </div>
              </div>
           </div>
         </div>
       </div>
       {viewingPolicy && <PolicyDocumentModal policy={viewingPolicy} user={user} onClose={() => setViewingPolicy(null)} />}
+      {viewingOfficialCertificate && <OfficialCertificateModal policy={viewingOfficialCertificate} user={user} onClose={() => setViewingOfficialCertificate(null)} />}
     </div>
   );
 };
